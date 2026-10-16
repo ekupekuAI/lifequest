@@ -11,6 +11,7 @@ import { region } from '../domain/region';
 import type { RegionId, VoiceProfile } from '../domain/types';
 import { DEFAULT_MODEL, MAX_TTS_CHARS, ttsCacheInput, type Accent, type Emotion } from './ttsShared';
 import { accentFor, buildCast, castVoice, speedFor, type CastSpeaker } from './voiceCast';
+import { getSavedVoice, saveVoice, saveVoiceFromUrl } from './voiceCache';
 
 export interface NeuralLine {
   text: string;
@@ -128,6 +129,11 @@ function hardFailWith(msg: string) {
 
 function softFail(msg: string) {
   lastError = msg;
+  // while the device is offline, saved lines still play — don't switch off realistic voices
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    emit();
+    return;
+  }
   softFailures++;
   if (softFailures >= MAX_SOFT_FAILURES) hardFailWith(`${msg} (gave up after ${MAX_SOFT_FAILURES} tries; using built-in voices this session)`);
   else emit();
@@ -371,7 +377,22 @@ function resolveUrl(line: NeuralLine): Promise<string | null> {
     lruTouch(key, hit);
     return hit;
   }
-  const p = fetchAudio(line).catch(() => null);
+  const p = (async () => {
+    const saved = await getSavedVoice(key);
+    if (saved) return URL.createObjectURL(saved);
+    const url = await fetchAudio(line);
+    if (url) {
+      if (url.startsWith('blob:')) {
+        try {
+          const blob = await (await fetch(url)).blob();
+          void saveVoice(key, blob);
+        } catch {
+          /* ignore */
+        }
+      } else void saveVoiceFromUrl(key, url);
+    }
+    return url;
+  })().catch(() => null);
   lruTouch(key, p);
   void p.then((u) => {
     if (!u && lru.get(key) === p) lru.delete(key); // don't cache failures
