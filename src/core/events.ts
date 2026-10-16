@@ -10,6 +10,12 @@ export interface BusEvents {
   scene: { goto: LocationId; spawn?: string };
   /** a short report for whoever assigned the current task (sent to the parent's dashboard in family mode) */
   report: { text: string; tone: 'good' | 'neutral' | 'bad'; toMemberId?: string };
+  /**
+   * A family member comes over to deal with something (fight, too much phone, napping through a task…).
+   * The scene that owns that NPC sets `handled = true` synchronously, walks them to the player and calls
+   * `arrive()` when they get there. If no scene handles it, conduct.ts calls arrive() itself (phone call).
+   */
+  conduct: { type: 'intervene'; memberId: string; reason: string; handled?: boolean; arrive: () => void };
 }
 
 type Handler<T> = (payload: T) => void;

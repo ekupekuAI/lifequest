@@ -350,6 +350,40 @@ export interface GameState {
   memories?: Memory[];
   /** family rewards board (offline: edited in the parent dashboard; family mode: mirrored from families.settings.rewards) */
   rewards?: Reward[];
+  /** behaviour & responsibility tracking (screen time, fights, road safety, sleep) — see core/conduct.ts */
+  conduct?: ConductState;
+}
+
+export type ConductKind = 'fight' | 'screen' | 'road' | 'sleep' | 'respect' | 'safety';
+
+export interface ConductEvent {
+  at: number;
+  day: number;
+  kind: ConductKind;
+  /** 1 = gentle reminder, 2 = scolding, 3 = serious (consequence applied) */
+  severity: 1 | 2 | 3;
+  text: string;
+  /** member id (or npc key) who responded */
+  by?: string;
+  lesson?: string;
+}
+
+export interface ConductState {
+  /** counters below are for this day and reset when the day changes */
+  day: number;
+  screenMinutes: number;
+  fights: number;
+  /** sibling tension 0..100 — rises with teasing/fighting, cools down over time */
+  tension: number;
+  roadWarnings: number;
+  napMinutes: number;
+  /** phone confiscated until this clock minute (consequence) */
+  phoneTakenUntil?: number;
+  /** TV not allowed for the rest of the day */
+  tvBanned?: boolean;
+  log: ConductEvent[];
+  /** messages for the parent dashboard */
+  alerts: { id: string; at: number; day: number; kind: ConductKind; text: string; read?: boolean }[];
 }
 
 export interface Memory {

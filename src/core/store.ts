@@ -89,6 +89,7 @@ export type Modal =
   | { type: 'confirm'; text: string; yes: string; onYes: () => void }
   | { type: 'settings' }
   | { type: 'phone' }
+  | { type: 'reels' }
   | { type: 'day-summary'; day: number };
 
 export interface Toast {
