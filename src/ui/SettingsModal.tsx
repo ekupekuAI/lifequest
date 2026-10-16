@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { clearVoiceCache, voiceCacheStats } from '../core/voiceCache';
 import { store } from '../core/store';
 import { voice, sampleLine, defaultVoiceMode, type VoiceMode } from '../core/voice';
 import {
@@ -240,6 +241,49 @@ function CastEditorRow({ row, canPlay }: { row: CastRow; canPlay: boolean }) {
   );
 }
 
+/** Lines saved on this device: replay instantly and offline, without using ElevenLabs credits. */
+function SavedVoices() {
+  const [stats, setStats] = useState<{ count: number; bytes: number; supported: boolean } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const refresh = () => void voiceCacheStats().then(setStats);
+  useEffect(() => {
+    refresh();
+    const t = setInterval(refresh, 4000);
+    return () => clearInterval(t);
+  }, []);
+  if (stats && !stats.supported) {
+    return (
+      <div className="vs-row">
+        <span className="vs-note">This browser can't save voice lines, so they are fetched each time.</span>
+      </div>
+    );
+  }
+  const size = !stats ? '…' : stats.bytes < 1024 * 1024 ? `${Math.max(1, Math.round(stats.bytes / 1024))} KB` : `${(stats.bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return (
+    <div className="vs-row">
+      <span>
+        <span>Saved on this device</span>
+        <span className="vs-note" style={{ display: 'block' }} role="status">
+          {stats ? `${stats.count} line${stats.count === 1 ? '' : 's'} · ${size}. They replay instantly, even offline, at no cost.` : 'Checking…'}
+        </span>
+      </span>
+      <button
+        type="button"
+        className="btn btn-sm"
+        disabled={busy || !stats?.count}
+        onClick={async () => {
+          setBusy(true);
+          await clearVoiceCache();
+          setBusy(false);
+          refresh();
+        }}
+      >
+        Clear
+      </button>
+    </div>
+  );
+}
+
 function NeuralPanel({ mode, accentHints }: { mode: VoiceMode; accentHints: boolean }) {
   const status = useNeuralState();
   const [health, setHealth] = useState<string | null>(null);
@@ -292,6 +336,7 @@ function NeuralPanel({ mode, accentHints }: { mode: VoiceMode; accentHints: bool
           </button>
         </div>
       )}
+      {neuralConfigured() && <SavedVoices />}
       {neuralConfigured() && (
         <details className="vs-adv">
           <summary>Advanced: custom voice IDs</summary>
