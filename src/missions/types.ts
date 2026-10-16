@@ -47,7 +47,7 @@ export interface MissionEvaluation {
 export interface MissionDef {
   id: string;
   title: string;
-  category: 'household' | 'errand' | 'family' | 'public-service';
+  category: 'household' | 'errand' | 'family' | 'public-service' | 'social';
   difficulty: 1 | 2 | 3;
   icon: string;
   summary: string;
@@ -75,6 +75,10 @@ export interface MissionDef {
   onInteract?(s: GameStore, target: string): boolean;
   onTalk?(s: GameStore, member: FamilyMember): boolean;
   onEvent?(s: GameStore, ev: GameEvent): void;
+  /** the phone button during this mission; return true when handled (default: call home) */
+  onPhone?(s: GameStore): boolean;
+  /** extra condition for the reward badge on top of "completed with 70+" */
+  earnsBadge?(s: GameStore): boolean;
   /** extra progress text for an objective, e.g. "3/9" */
   progress?(state: GameState, objectiveId: string): string | null;
   evaluate(s: GameStore, forced?: Outcome): MissionEvaluation;

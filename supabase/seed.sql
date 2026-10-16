@@ -118,3 +118,16 @@ on conflict (slug) do update set
   difficulty  = excluded.difficulty,
   definition  = excluded.definition,
   is_active   = excluded.is_active;
+
+-- v3: optional teen storyline (only offered when the player picked a partner in setup)
+insert into public.mission_templates (slug, title, description, category, difficulty, definition, is_active)
+values
+  ('date-night', 'Date on a Budget', 'Meet your date at the park bench by 6:30 on your own pocket money: help at home first, remember their peanut allergy, be honest, and respect their 7:15 curfew.', 'social', 2,
+   '{"location": "town", "assignerRoles": ["partner"], "skills": ["communication", "budget", "time", "empathy", "responsibility"], "challenges": ["date-favour", "date-outfit", "date-opener", "date-honesty", "date-curfew"]}'::jsonb, true)
+on conflict (slug) do update set
+  title       = excluded.title,
+  description = excluded.description,
+  category    = excluded.category,
+  difficulty  = excluded.difficulty,
+  definition  = excluded.definition,
+  is_active   = excluded.is_active;

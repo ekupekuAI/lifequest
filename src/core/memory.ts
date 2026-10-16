@@ -60,6 +60,14 @@ const TOPICS: Record<string, { topic: string; lesson: string }> = {
   'showed-slip': { topic: 'you brought back the appointment slip', lesson: 'Writing details down beats trying to remember them.' },
   'trusted-more': { topic: 'you finished a job on time and did it really well', lesson: 'Doing things well, on time, is how you earn more freedom.' },
   late: { topic: 'a job ran a bit late', lesson: 'Leave a ten-minute buffer — queues and buses always take longer.' },
+  // optional teen storyline (date-night)
+  'date-allergy': { topic: 'you remembered your date’s peanut allergy', lesson: 'Remembering small details is how people feel cared for.' },
+  'date-peanut': { topic: 'the peanut chocolate mix-up', lesson: 'Listening properly includes the boring-but-important bits, like allergies.' },
+  'date-curfew': { topic: 'you walked your date to the bus so they got home on time', lesson: 'Respecting other people’s rules and curfews is a big part of being trusted.' },
+  'date-pleaded': { topic: 'you asked your date to stay past their curfew', lesson: 'When someone says they need to go, “okay!” is always the right answer.' },
+  'date-pickup': { topic: 'the bus timetable pickup line', lesson: 'Laughing at your own cringe is a superpower.' },
+  'date-sneak': { topic: 'you slipped out without saying where you were going', lesson: 'Telling your family where you are going is about safety, not just rules.' },
+  'date-favour': { topic: 'you did the chores before going out', lesson: 'Family first, fun second — and you can usually have both.' },
 };
 
 const keyOf = (m: Memory) => m.id.split('@')[0];
@@ -207,6 +215,26 @@ export function rememberResult(s: GameStore, result: MissionResult): void {
         add({ key: 'good-plan', who: boss, kind: 'responsible', text: 'You planned the errands in a smart order. That’s how adults do it!' });
       break;
     }
+    case 'date-night': {
+      const partner = s.memberByRole('partner');
+      const pid = partner?.id ?? boss;
+      const fav = typeof f['favourBy'] === 'string' && f['favourBy'] ? String(f['favourBy']) : (s.memberByRole(...GUARDIAN_ROLES)?.id ?? 'family');
+      if (f['favour'] === 'sneaked')
+        add({ key: 'date-sneak', who: fav, kind: 'careless', text: 'You slipped out without doing the chores or saying where you were going.', effect: { type: 'trust', delta: -2, say: words('You slipped out yesterday without a word. Next time just tell me where you’re going — I would have said yes, {endearment}.') } });
+      if (f['snacks'] === 'safe')
+        add({ key: 'date-allergy', who: pid, kind: 'kind', text: 'You remembered I can’t have peanuts 🥺', effect: { type: 'trust', delta: 1, say: 'you remembered no peanuts!! 🥺 told my mum and she said “keep that one” 😂' } });
+      else if (f['snacks'] === 'peanut')
+        add({ key: 'date-peanut', who: pid, kind: 'forgetful', text: 'The peanut chocolate… I’m allergic, remember? 😅 It’s okay!' });
+      if (f['curfew'] === 'walked')
+        add({ key: 'date-curfew', who: pid, kind: 'responsible', text: 'You walked me to the bus so I was home by 7:15.', effect: { type: 'trust', delta: 1, say: 'my mum says hi 😂 she liked that I was home on time' } });
+      else if (f['curfew'] === 'pleaded')
+        add({ key: 'date-pleaded', who: pid, kind: 'careless', text: 'When I say I have to go home, please just say okay 🙂', effect: { type: 'reminder', say: 'hey, about yesterday — when I say I have to go home, I need you to be cool with it, okay? 🙂 still had fun though' } });
+      if (f['pickup'])
+        add({ key: 'date-pickup', who: pid, kind: 'brave', text: 'The bus timetable line. Unforgettable. 😂', effect: { type: 'reminder', say: 'I still think about the bus timetable line. Every day. It haunts me 😂' } });
+      if (f['favour'] === 'done')
+        add({ key: 'date-favour', who: fav, kind: 'helpful', text: 'You did the chores before heading out to meet your friend. Thank you!' });
+      break;
+    }
     case 'clinic-visit': {
       const grand = s.memberByRole('grandparent')?.id ?? boss;
       if (/health card was forgotten/.test(fb))
@@ -217,8 +245,10 @@ export function rememberResult(s: GameStore, result: MissionResult): void {
     }
   }
 
-  // general: great work on time earns trust; lateness gets one gentle note
-  if (result.outcome === 'completed' && result.overall >= 80)
+  // general: great work on time earns trust; lateness gets one gentle note (family tasks only — not dates)
+  if (result.missionId === 'date-night') {
+    /* the partner isn't the family: no "you've earned more responsibility" note */
+  } else if (result.outcome === 'completed' && result.overall >= 80)
     add({ key: 'trusted-more', who: boss, kind: 'responsible', text: `You did “${result.title}” on time and really well. You’ve earned more responsibility.`, effect: { type: 'trust', delta: 2, say: `I keep thinking about how well you handled “${result.title}”. You’ve earned more responsibility around here.` } });
   else if (result.outcome === 'completed-late' && !drafts.length)
     add({ key: 'late', who: boss, kind: 'late', text: `“${result.title}” ran a bit late. A ten-minute buffer helps.` });
@@ -300,9 +330,15 @@ export function onNewDay(s: GameStore): void {
   }
   const lines = picks.map(({ m, text }) => {
     const who = s.member(m.who)!;
-    return { speaker: who.name, portrait: who.id, text };
+    // the partner lives across town, so their memories arrive as phone texts
+    return { speaker: who.role === 'partner' ? `📱 ${who.name}` : who.name, portrait: who.id, text };
   });
   const lead = picks.find((p) => !isPositive(p.m)) ?? picks[0];
+  // closing life lesson comes from family; skip it when only the partner texted
+  if (picks.every((p) => s.member(p.m.who)?.role === 'partner')) {
+    s.say(lines.slice(0, 3));
+    return;
+  }
   const guide = s.memberByRole(...GUARDIAN_ROLES) ?? s.member(lead.m.who)!;
   const closing = isPositive(lead.m)
     ? words(`Keep it up, {endearment}. ${topicOf(lead.m).lesson}`)
@@ -325,6 +361,8 @@ function voice(m: FamilyMember, mem: Memory): string {
   const good = isPositive(mem);
   const own = mem.who === m.id;
   switch (m.role) {
+    case 'partner':
+      return good ? `${mem.text} …anyway hi 🙈` : mem.text;
     case 'grandparent':
       return words(
         good
@@ -354,7 +392,13 @@ export function memoryChat(s: GameStore, m: FamilyMember): string | null {
   if (roll >= MEMORY_CHAT_CHANCE) return null;
   const recent = list.filter((x) => day - x.day <= 3 && day - x.day >= 0);
   // parents talk about their own memories first; siblings & grandparents talk about anything
-  const pool = PARENT_ROLES.includes(m.role) && recent.some((x) => x.who === m.id) ? recent.filter((x) => x.who === m.id) : recent;
+  // the partner only brings up their own memories; family never brings up the partner's
+  const pool =
+    m.role === 'partner'
+      ? recent.filter((x) => x.who === m.id)
+      : PARENT_ROLES.includes(m.role) && recent.some((x) => x.who === m.id)
+        ? recent.filter((x) => x.who === m.id)
+        : recent.filter((x) => s.member(x.who)?.role !== 'partner');
   if (!pool.length) return null;
   // positive memories come up 3× as often as negative ones
   const weighted = pool.flatMap((x) => (isPositive(x) ? [x, x, x] : [x]));

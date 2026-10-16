@@ -21,6 +21,9 @@ export const ITEMS: Record<string, ItemDef> = {
   'cooking-pot': { id: 'cooking-pot', name: 'Cooking pot', weight: 0, category: 'chore' },
   'cold-drink': { id: 'cold-drink', name: 'Cold drink', weight: 1, category: 'grocery' },
   bread: { id: 'bread', name: 'Bread loaf', weight: 0.8, category: 'grocery' },
+  popcorn: { id: 'popcorn', name: 'Popcorn (small)', weight: 0.3, category: 'grocery' },
+  'juice-box': { id: 'juice-box', name: 'Mango juice box', weight: 0.3, category: 'grocery' },
+  'peanut-choc': { id: 'peanut-choc', name: 'Peanut crunch chocolate', weight: 0.3, category: 'grocery' },
   // gear
   'cloth-bag': { id: 'cloth-bag', name: 'Cloth shopping bag', weight: 0, category: 'gear' },
   umbrella: { id: 'umbrella', name: 'Umbrella', weight: 0.5, category: 'gear' },
@@ -123,6 +126,9 @@ export const KIOSK_SHELF: Shelf = {
     { item: 'chips', price: 25 },
     { item: 'chocolate', price: 22 },
     { item: 'tomato', price: 15, tag: 'per piece' },
+    { item: 'popcorn', price: 15 },
+    { item: 'juice-box', price: 15 },
+    { item: 'peanut-choc', price: 20, tag: 'Extra peanutty!' },
   ],
 };
 

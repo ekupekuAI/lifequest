@@ -6,11 +6,23 @@ import type { GameState, LocationId } from '../../domain/types';
 import { isOpenAt } from '../../domain/world';
 import { busPhase, busStopped, installTownHandlers, nextRoute12, type Stop } from '../bus';
 import { formatClock } from '../../core/systems';
+import { partnerMode } from '../../missions/dateNight';
+import type { NpcSpec } from './WorldScene';
+
+/** Minimal view of a WorldScene NPC actor (the type itself is private to WorldScene). */
+interface PartnerActor {
+  spec: NpcSpec;
+  sprite: Phaser.GameObjects.Sprite;
+  target?: Phaser.Math.Vector2;
+}
 
 const W = 44;
 const H = 30;
 const b = (row: number) => (row + 1) * T;
 const night = (s: GameState) => s.clock.minutes % 1440 > 18.5 * 60;
+/** Where the partner waits during the date: right beside the park bench by the pond. */
+const DATE_SPOT = { x: 250, y: b(23) + 2 };
+const PARK = { x: 210, y: b(23), w: 140, h: 40 };
 
 function buildRows(): string[] {
   const g: string[][] = Array.from({ length: H }, () => Array.from({ length: W }, () => 'g'));
@@ -97,6 +109,8 @@ export class TownScene extends WorldScene {
   private busView?: BusView;
   private cars: { img: Phaser.GameObjects.Image; dir: 1 | -1; y: number; wait: number }[] = [];
   private rain?: Phaser.GameObjects.Particles.ParticleEmitter;
+  private partner?: PartnerActor;
+  private partnerShown: 'date' | 'stroll' | 'hidden' | null = null;
 
   constructor() {
     super('Town');
@@ -194,6 +208,21 @@ export class TownScene extends WorldScene {
     this.npc({ id: 'folk2', texture: 'char:folk:4', x: 500, y: b(15), wander: { x: 380, y: b(14) + 4, w: 220, h: 8 }, label: 'Say hi', flavor: '"Always cross at the zebra crossing, kiddo. Cars stop there."' });
     this.npc({ id: 'folk3', texture: 'char:folk:6', x: 260, y: b(24), wander: { x: 210, y: b(23), w: 140, h: 40 }, label: 'Say hi', flavor: '"The bus to the city comes every 20 minutes. Plan ahead!"' });
 
+    // ---- optional teen partner: waits at the bench for the date, sometimes strolls in the park ----
+    this.partner = undefined;
+    this.partnerShown = null;
+    const partner = store.memberByRole('partner');
+    if (partner) {
+      const actor = this.npc({ id: partner.id, texture: `char:${partner.id}`, x: DATE_SPOT.x, y: DATE_SPOT.y, facing: 'left', solid: false }) as PartnerActor | undefined;
+      const it = this.interactables.find((i) => i.id === `npc:${partner.id}`);
+      if (actor && it) {
+        this.partner = actor;
+        it.visible = () => this.partnerShown === 'date' || this.partnerShown === 'stroll';
+        it.label = () => (this.partnerShown === 'date' && !store.state.run?.objectives['meet']?.done ? `Meet ${partner.name} 💌` : `Talk to ${partner.name}`);
+        this.syncPartner();
+      }
+    }
+
     // ---- bus & cars ----
     this.busView = new BusView(this, 'town', STOP_X, b(13) - 1, 'City Centre');
     this.cars = [
@@ -211,7 +240,29 @@ export class TownScene extends WorldScene {
     return to === 'city' || to === 'library' ? { x: 656, y: b(15) - 6 } : null;
   }
 
+  /** Show/hide and position the partner according to the date mission and time of day. */
+  private syncPartner() {
+    const a = this.partner;
+    if (!a) return;
+    const mode = partnerMode(store);
+    if (mode === this.partnerShown) return;
+    this.partnerShown = mode;
+    const shadow = a.sprite.getData('shadow') as Phaser.GameObjects.Image | undefined;
+    a.sprite.setVisible(mode !== 'hidden');
+    shadow?.setVisible(mode !== 'hidden');
+    a.target = undefined;
+    if (mode === 'date') {
+      a.spec.wander = undefined;
+      a.sprite.setPosition(DATE_SPOT.x, DATE_SPOT.y);
+    } else if (mode === 'stroll') {
+      a.spec.wander = { ...PARK };
+    } else {
+      a.spec.wander = undefined;
+    }
+  }
+
   protected tick(delta: number) {
+    this.syncPartner();
     const bus = this.busView?.sync(this.player) ?? null;
     // cars stop for pedestrians on or near the road ahead of them, and queue behind a bus
     for (const car of this.cars) {

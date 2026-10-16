@@ -9,7 +9,8 @@ import { formatDuration } from '../core/systems';
 
 export default function MissionBoard() {
   const { state } = useSnap();
-  const list = store.availableMissions();
+  // social missions (the optional date) come by text from the partner, not from the family board
+  const list = store.availableMissions().filter((x) => x.def.category !== 'social');
   const pending = state.assignments.filter((a) => a.status === 'assigned' && a.assignedTo === 'player');
   const busy = !!state.run;
   return (

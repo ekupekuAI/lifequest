@@ -768,6 +768,8 @@ export function sampleLine(role: string, name: string): string {
       return `Hello dear, I'm ${name}. Come and sit with me.`;
     case 'guardian':
       return `Hi, I'm ${name}. Let's plan the day together.`;
+    case 'partner':
+      return `Oh hey! …I mean, hi. I'm ${name}. Park later? 🦆`;
     case 'shopkeeper':
       return `Welcome! That will be ${region().currency.symbol}${region().currency.decimals ? '1.20' : '150'}, please.`;
     default:

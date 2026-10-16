@@ -335,7 +335,8 @@ export class SupabaseRepository implements GameRepository {
     }
 
     const ids = new Map<string, string>();
-    const rows = members.map((m) => {
+    // the optional teen partner is not a household member (and not a valid family_members role)
+    const rows = members.filter((m) => m.role !== 'partner').map((m) => {
       const id = byGameId.get(m.id) ?? newId();
       ids.set(m.id, id);
       return {

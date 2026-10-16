@@ -14,6 +14,7 @@ export const ROLE_LABELS: Record<Role, string> = {
   'younger-sibling': 'Younger sibling',
   grandparent: 'Grandparent',
   guardian: 'Guardian',
+  partner: 'Partner',
 };
 
 const DEFAULTS: Record<Exclude<Role, 'player'>, { name: string; appearance: Appearance }> = {
@@ -23,7 +24,34 @@ const DEFAULTS: Record<Exclude<Role, 'player'>, { name: string; appearance: Appe
   'younger-sibling': { name: 'Tara', appearance: { skin: SKIN_TONES[2], hair: HAIR_COLORS[1], hairStyle: 'long', shirt: '#f28ab2', pants: '#3d5a80' } },
   grandparent: { name: 'Dadi', appearance: { skin: SKIN_TONES[2], hair: HAIR_COLORS[4], hairStyle: 'bun', shirt: '#8e5ea2', pants: '#6b705c' } },
   guardian: { name: 'Aunt Leela', appearance: { skin: SKIN_TONES[3], hair: HAIR_COLORS[0], hairStyle: 'long', shirt: '#f2c14e', pants: '#14213d' } },
+  partner: { name: 'Ananya', appearance: { skin: SKIN_TONES[1], hair: HAIR_COLORS[5], hairStyle: 'long', shirt: '#8e5ea2', pants: '#3d5a80' } },
 };
+
+/** Optional teen storyline: a girlfriend/boyfriend who is a classmate from across town (never in the house). */
+export type PartnerChoice = 'girlfriend' | 'boyfriend' | null;
+
+const PARTNER_LOOKS: Record<'girlfriend' | 'boyfriend', Appearance> = {
+  girlfriend: { skin: SKIN_TONES[1], hair: HAIR_COLORS[5], hairStyle: 'long', shirt: '#8e5ea2', pants: '#3d5a80' },
+  boyfriend: { skin: SKIN_TONES[3], hair: HAIR_COLORS[0], hairStyle: 'spiky', shirt: '#2e86ab', pants: '#2b2d42' },
+};
+
+/** Region-aware default name for the partner. */
+export function partnerName(kind: 'girlfriend' | 'boyfriend'): string {
+  const n = region().names;
+  return kind === 'girlfriend' ? n.partnerGirl : n.partnerBoy;
+}
+
+/** The partner as a profile member (id `partner-0`). */
+export function partnerMember(kind: 'girlfriend' | 'boyfriend', name?: string): FamilyMember {
+  return {
+    id: 'partner-0',
+    name: name?.trim() || partnerName(kind),
+    role: 'partner',
+    appearance: { ...PARTNER_LOOKS[kind] },
+    trust: 60,
+    voice: kind === 'girlfriend' ? { pitch: 1.2, rate: 1.08, kind: 'female' } : { pitch: 1, rate: 1.08, kind: 'male' },
+  };
+}
 
 export interface FamilyPreset {
   id: string;
@@ -48,6 +76,7 @@ export const DEFAULT_VOICES: Record<Role, VoiceProfile> = {
   'younger-sibling': { pitch: 1.5, rate: 1.1, kind: 'child' },
   grandparent: { pitch: 0.95, rate: 0.82, kind: 'elder-female' },
   guardian: { pitch: 1.05, rate: 1, kind: 'female' },
+  partner: { pitch: 1.2, rate: 1.08, kind: 'female' },
 };
 
 /** Region-aware default name for a role. */
@@ -60,6 +89,7 @@ export function regionName(role: Exclude<Role, 'player'>): string {
     'younger-sibling': n.younger,
     grandparent: n.grandparent,
     guardian: n.guardian,
+    partner: n.partnerGirl,
   };
   return map[role] ?? DEFAULTS[role].name;
 }
@@ -74,6 +104,7 @@ export function buildProfile(
   playerLook: Appearance,
   preset: FamilyPreset,
   overrides: Partial<Record<string, string>> = {},
+  partner: PartnerChoice = null,
 ): Profile {
   const members: FamilyMember[] = [
     { id: 'player', name: playerName || 'Alex', role: 'player', appearance: playerLook, trust: 100, voice: { ...DEFAULT_VOICES.player } },
@@ -83,6 +114,7 @@ export function buildProfile(
       return m;
     }),
   ];
+  if (partner) members.push(partnerMember(partner, overrides.partner));
   return { playerName: playerName || 'Alex', familyName: 'Family', members };
 }
 

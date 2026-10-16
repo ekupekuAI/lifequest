@@ -142,6 +142,8 @@ export function categoryFor(s: CastSpeaker): CastCategory {
       return isMaleKind(k) ? 'elder-male' : 'elder-female';
     case 'player':
       return isMaleKind(k) ? 'teen-boy' : isFemaleKind(k) ? 'teen-girl' : 'neutral';
+    case 'partner':
+      return isMaleKind(k) ? 'teen-boy' : 'teen-girl';
     default:
       break;
   }

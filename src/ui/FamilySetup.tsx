@@ -12,6 +12,8 @@ import {
   SKIN_TONES,
   buildProfile,
   defaultMember,
+  partnerMember,
+  type PartnerChoice,
 } from '../domain/family';
 import { region, setRegion, type RegionId } from '../domain/region';
 import { sampleLine, voice } from '../core/voice';
@@ -56,7 +58,9 @@ function VoiceControls({
   speakKey,
   profile,
   onChange,
+  defaults,
 }: {
+  defaults?: VoiceProfile;
   role: Role;
   name: string;
   speakKey: string;
@@ -111,7 +115,7 @@ function VoiceControls({
         >
           {talking ? '■ Stop' : '▶ Test'}
         </button>
-        <button type="button" className="btn btn-sm btn-ghost" onClick={() => onChange({ ...DEFAULT_VOICES[role] })}>
+        <button type="button" className="btn btn-sm btn-ghost" onClick={() => onChange({ ...(defaults ?? DEFAULT_VOICES[role]) })}>
           Reset
         </button>
         {!v.isSupported() && <span className="vs-note">Speech isn't available in this browser, so you'll hear babble.</span>}
@@ -127,6 +131,8 @@ export default function FamilySetup() {
   const [names, setNames] = useState<Partial<Record<string, string>>>({});
   const [voices, setVoices] = useState<Partial<Record<Role, VoiceProfile>>>({});
   const [openVoice, setOpenVoice] = useState<Role | null>(null);
+  const [partner, setPartner] = useState<PartnerChoice>(null);
+  const [partnerNameInput, setPartnerNameInput] = useState('');
   const { state } = useSnap();
   useDisplaySettings();
   const settings = state.settings;
@@ -134,7 +140,8 @@ export default function FamilySetup() {
   const preset = FAMILY_PRESETS.find((p) => p.id === presetId) ?? FAMILY_PRESETS[0];
   const playerKind = kindOf('player');
   const set = (patch: Partial<Appearance>) => setLook((l) => ({ ...l, ...patch }));
-  const vp = (r: Role): VoiceProfile => voices[r] ?? { ...DEFAULT_VOICES[r] };
+  const vp = (r: Role): VoiceProfile =>
+    voices[r] ?? (r === 'partner' && partner ? { ...partnerMember(partner).voice! } : { ...DEFAULT_VOICES[r] });
   const setVp = (r: Role, v: VoiceProfile) => setVoices((m) => ({ ...m, [r]: v }));
 
   useEffect(() => {
@@ -154,6 +161,18 @@ export default function FamilySetup() {
     for (const p of FAMILY_PRESETS) for (const r of p.roles) out[r] ??= defaultMember(r);
     return out;
   }, [regionId]);
+  const partnerDefaults = useMemo(() => {
+    setRegion(regionId);
+    return { girlfriend: partnerMember('girlfriend'), boyfriend: partnerMember('boyfriend') };
+  }, [regionId]);
+  const pickPartner = (p: PartnerChoice) => {
+    setPartner(p);
+    // the voice follows the pick unless the player tuned it
+    setVoices((v) => {
+      const { partner: _old, ...rest } = v;
+      return rest;
+    });
+  };
 
   const pickRegion = (id: RegionId) => {
     setRegion(id);
@@ -168,7 +187,8 @@ export default function FamilySetup() {
       if (v) overrides[r] = v;
     }
     setRegion(regionId);
-    const profile = buildProfile(name.trim(), look, preset, overrides);
+    if (partner && partnerNameInput.trim()) overrides.partner = partnerNameInput.trim();
+    const profile = buildProfile(name.trim(), look, preset, overrides, partner);
     for (const m of profile.members) m.voice = { ...vp(m.role) };
     store.newGame(profile, { region: regionId, difficulty: settings.difficulty });
   }
@@ -298,6 +318,65 @@ export default function FamilySetup() {
             })}
           </div>
           <p className="tiny muted">Family members give you tasks. Rename them and tune their voices — blank names use the suggestions shown.</p>
+
+          <div className="field" style={{ marginTop: 12 }}>
+            <span className="label" id="partner-l">
+              Partner
+            </span>
+            <div className="chips" role="radiogroup" aria-labelledby="partner-l">
+              {([
+                ['girlfriend', 'Girlfriend'],
+                ['boyfriend', 'Boyfriend'],
+                [null, 'None'],
+              ] as [PartnerChoice, string][]).map(([id, label]) => (
+                <button key={label} type="button" className="chip" role="radio" aria-checked={partner === id} onClick={() => pickPartner(id)}>
+                  {id && <Portrait id={`setup-partner-${id}`} appearance={partnerDefaults[id].appearance} kind={kindOf('partner')} size={30} alt="" />}
+                  {label}
+                </button>
+              ))}
+            </div>
+            <span className="tiny muted">Optional teen storyline: dates on a budget, awkward texts and real-life lessons. You can leave it off.</span>
+          </div>
+          {partner && (
+            <div className="names">
+              <div className="vs-member">
+                <div className="name-row">
+                  <Portrait id={`setup-partner-${partner}`} appearance={partnerDefaults[partner].appearance} kind={kindOf('partner')} size={36} alt="" />
+                  <label className="field grow">
+                    <span className="label">{partner === 'girlfriend' ? 'Girlfriend' : 'Boyfriend'} (a classmate from across town)</span>
+                    <input
+                      type="text"
+                      maxLength={16}
+                      value={partnerNameInput}
+                      placeholder={partnerDefaults[partner].name}
+                      onChange={(e) => setPartnerNameInput(e.target.value.replace(/[<>]/g, ''))}
+                      autoComplete="off"
+                      spellCheck={false}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className={`btn btn-sm vs-voice-btn ${openVoice === 'partner' ? 'btn-primary' : ''}`}
+                    aria-expanded={openVoice === 'partner'}
+                    aria-label={`${partnerNameInput.trim() || partnerDefaults[partner].name}'s voice`}
+                    onClick={() => setOpenVoice(openVoice === 'partner' ? null : 'partner')}
+                  >
+                    🔊 Voice
+                  </button>
+                </div>
+                {openVoice === 'partner' && (
+                  <VoiceControls
+                    role="partner"
+                    name={partnerNameInput.trim() || partnerDefaults[partner].name}
+                    speakKey="partner-0"
+                    profile={vp('partner')}
+                    defaults={partnerDefaults[partner].voice}
+                    onChange={(v) => setVp('partner', v)}
+                  />
+                )}
+              </div>
+            </div>
+          )}
         </section>
 
         <section className="panel setup-card" aria-labelledby="diff-h">

@@ -173,6 +173,38 @@ const ICONS: Record<string, Draw> = {
     px(ctx, 9, 8, PAL.orange[2]);
     px(ctx, 4, 4, R[4]);
   },
+  'peanut-choc': (ctx) => {
+    // orange wrapper with a big P (for Peanuts!)
+    rect(ctx, 3, 2, 10, 12, PAL.orange[2]);
+    vline(ctx, 3, 2, 12, PAL.orange[3]);
+    vline(ctx, 12, 2, 12, PAL.orange[1]);
+    rect(ctx, 4, 2, 8, 3, '#6a3a24');
+    px(ctx, 6, 3, '#c98a4a');
+    px(ctx, 9, 3, '#c98a4a');
+    drawPixelText(ctx, 'P', 6, 8, Y[3]);
+    hline(ctx, 4, 12, 8, PAL.orange[3]);
+  },
+  popcorn: (ctx) => {
+    // striped tub with fluffy top
+    rect(ctx, 4, 6, 8, 8, W[4]);
+    for (let x = 4; x < 12; x += 2) vline(ctx, x, 6, 8, R[2]);
+    hline(ctx, 4, 13, 8, R[1]);
+    ellipse(ctx, 3, 2, 10, 5, Y[3]);
+    px(ctx, 5, 3, W[4]);
+    px(ctx, 8, 2, W[4]);
+    px(ctx, 10, 4, W[4]);
+    px(ctx, 6, 5, Y[2]);
+  },
+  'juice-box': (ctx) => {
+    // carton with a straw
+    rect(ctx, 4, 4, 8, 10, Y[3]);
+    vline(ctx, 4, 4, 10, Y[2]);
+    vline(ctx, 11, 4, 10, PAL.orange[2]);
+    rect(ctx, 5, 8, 6, 4, PAL.orange[2]);
+    vline(ctx, 9, 1, 4, W[4]);
+    px(ctx, 10, 1, W[4]);
+    hline(ctx, 4, 13, 8, PAL.orange[3]);
+  },
   'cold-drink': (ctx) => {
     // glass cola bottle
     rect(ctx, 7, 1, 2, 2, R[2]);

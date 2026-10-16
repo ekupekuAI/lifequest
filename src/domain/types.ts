@@ -57,7 +57,9 @@ export type Role =
   | 'older-sibling'
   | 'younger-sibling'
   | 'grandparent'
-  | 'guardian';
+  | 'guardian'
+  /** optional teen girlfriend/boyfriend — a classmate from across town, never part of the household */
+  | 'partner';
 
 export const GUARDIAN_ROLES: Role[] = ['mother', 'father', 'grandparent', 'guardian'];
 

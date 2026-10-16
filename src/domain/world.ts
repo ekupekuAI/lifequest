@@ -88,6 +88,8 @@ export type HomeSpot = 'kitchen' | 'living' | 'bedroom' | 'dining' | 'away' | 's
 /** Simple family routines: where each role is at a given time of day. */
 export function scheduleFor(role: Role, minutes: number): { spot: HomeSpot; activity: string } {
   const m = minutes % 1440;
+  // the partner lives across town — never inside the player's home
+  if (role === 'partner') return { spot: 'away', activity: 'at their own home across town' };
   if (m >= 19 * 60 && m < 19 * 60 + 40) return { spot: 'dining', activity: 'having dinner' };
   switch (role) {
     case 'mother':

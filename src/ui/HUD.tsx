@@ -5,6 +5,7 @@ import { OPENING_HOURS } from '../domain/world';
 import { formatClock } from '../core/systems';
 import { formatMoney, itemName } from '../domain/items';
 import { fmt } from '../missions/format';
+import { dateTextWaiting } from '../missions/dateNight';
 import { LOCATION_NAMES, levelFor, useSnap } from './hooks';
 import { ItemIcon } from './art';
 import { Bar, Key } from './Modal';
@@ -248,9 +249,25 @@ function StatusColumn() {
         <button className="btn" onClick={(e) => { e.currentTarget.blur(); store.openModal({ type: 'journal' }); }} title="Journal (J)" aria-label="Journal">
           📓<span className="lbl">J</span>
         </button>
-        <button className="btn" onClick={(e) => { e.currentTarget.blur(); store.callHome(); }} title="Call home (P)" aria-label="Call home">
-          📞<span className="lbl">P</span>
-        </button>
+        {(() => {
+          const unread = !state.run && dateTextWaiting(store);
+          return (
+            <button
+              className="btn"
+              style={{ position: 'relative' }}
+              onClick={(e) => { e.currentTarget.blur(); store.callHome(); }}
+              title={unread ? 'Phone — 1 new message (P)' : 'Call home (P)'}
+              aria-label={unread ? 'Phone, 1 new message' : 'Call home'}
+            >
+              📞<span className="lbl">P</span>
+              {unread && (
+                <span aria-hidden="true" style={{ position: 'absolute', top: -4, right: -4, minWidth: 16, height: 16, borderRadius: 8, background: '#e4572e', color: '#fff', fontSize: 10, lineHeight: '16px', textAlign: 'center', fontWeight: 700 }}>
+                  1
+                </span>
+              )}
+            </button>
+          );
+        })()}
         <button className="btn" onClick={(e) => { e.currentTarget.blur(); store.openModal({ type: 'pause' }); }} title="Pause (Esc)" aria-label="Pause">
           ❚❚
         </button>

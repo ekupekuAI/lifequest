@@ -37,7 +37,11 @@ export default function ParentDashboard({ onClose, fromTitle = false }: { onClos
   const [note, setNote] = useState<Record<string, string>>({});
   const [flash, setFlash] = useState<string | null>(null);
   // playable templates first; new missions appear here automatically from the registry
-  const templates = store.availableMissions().sort((a, b) => Number(b.avail.ok) - Number(a.avail.ok));
+  const templates = store
+    .availableMissions()
+    // the optional teen date storyline is the player's own social life, not a family chore
+    .filter((x) => x.def.category !== 'social')
+    .sort((a, b) => Number(b.avail.ok) - Number(a.avail.ok));
   const cur = region().currency;
   const maxBudget = money(5000);
   const diff = store.diff;

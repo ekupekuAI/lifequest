@@ -13,5 +13,6 @@ export function fmt(s: GameStore, text: string, opts: { assignerId?: string; bud
     .replace(/\{sibling\}/g, sibling)
     .replace(/\{player\}/g, s.player?.name ?? 'you')
     .replace(/\{grandparent\}/g, grand)
+    .replace(/\{partner\}/g, s.memberByRole('partner')?.name ?? 'your date')
     .replace(/\{budget\}/g, budget != null ? formatMoney(budget) : 'enough money');
 }

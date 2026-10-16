@@ -45,9 +45,11 @@ import { MISSIONS, getMission } from '../missions/registry';
 import { CHALLENGES as BASE_CHALLENGES } from '../missions/challenges';
 import { HOME_CHALLENGES } from '../missions/homeChallenges';
 import { TOWN_CHALLENGES } from '../missions/townChallenges';
+import { SOCIAL_CHALLENGES } from '../missions/socialChallenges';
+import { dateTextWaiting, partnerHello, partnerPhone } from '../missions/dateNight';
 
-/** Every challenge the engine knows about (base library + home + town packs). */
-const CHALLENGES: Record<string, ChallengeDef> = { ...BASE_CHALLENGES, ...HOME_CHALLENGES, ...TOWN_CHALLENGES };
+/** Every challenge the engine knows about (base library + home + town + social packs). */
+const CHALLENGES: Record<string, ChallengeDef> = { ...BASE_CHALLENGES, ...HOME_CHALLENGES, ...TOWN_CHALLENGES, ...SOCIAL_CHALLENGES };
 import { EventBus } from './events';
 import { fmt } from '../missions/format';
 import { memoryChat, missionLock, onNewDay, rememberResult } from './memory';
@@ -727,7 +729,7 @@ export class GameStore {
     def.skills.forEach((s) => this.skill(s, skillShare));
     this.state.stats.xp += xp;
     let badge: string | undefined;
-    if (def.rewards.badge && ev.outcome === 'completed' && overall >= 70 && !this.state.stats.badges.includes(def.rewards.badge)) {
+    if (def.rewards.badge && ev.outcome === 'completed' && overall >= 70 && (def.earnsBadge?.(this) ?? true) && !this.state.stats.badges.includes(def.rewards.badge)) {
       badge = def.rewards.badge;
       this.state.stats.badges.push(badge);
     }
@@ -909,6 +911,11 @@ export class GameStore {
     this.emit({ type: 'talk', memberId });
     const def = this.mission;
     if (def?.onTalk?.(this, m)) return;
+    // the partner is a classmate, not family: no household tasks, just (awkward) chat and date invites
+    if (m.role === 'partner') {
+      const remembered = !this.state.run && !dateTextWaiting(this) ? memoryChat(this, m) : null;
+      return remembered ? this.say([{ speaker: m.name, portrait: m.id, text: remembered }]) : partnerHello(this, m);
+    }
     if (this.state.run) {
       return this.say([{ speaker: m.name, portrait: m.id, text: this.chatLine(m, true) }]);
     }
@@ -967,6 +974,8 @@ export class GameStore {
     if (this.blocking) return;
     const run = this.state.run;
     const def = this.mission;
+    if (def?.onPhone?.(this)) return;
+    if (!run && partnerPhone(this)) return;
     const who = run ? this.member(run.assignerId) : this.memberByRole(...GUARDIAN_ROLES);
     if (!who) return this.toast('No one to call.', 'neutral');
     if (this.state.location === 'home') return this.toast(`${who.name} is right here at home — just talk to them!`, 'info');
@@ -1157,6 +1166,11 @@ export class GameStore {
     if (!o?.where) return null;
     let target = o.where.target;
     if (target === 'assigner') target = `npc:${this.state.run!.assignerId}`;
+    // `flag:<name>` points at the member id stored in that run flag (e.g. who asked for a favour)
+    if (target?.startsWith('flag:')) {
+      const id = this.state.run!.flags[target.slice(5)];
+      target = typeof id === 'string' && id ? `npc:${id}` : undefined;
+    }
     const roleAlias: Record<string, Role> = { sibling: 'younger-sibling', grandparent: 'grandparent', mother: 'mother', father: 'father' };
     if (target && roleAlias[target]) {
       const m = this.memberByRole(roleAlias[target]);

@@ -7,9 +7,10 @@ import { cookMeal } from './cook';
 import { doLaundry } from './laundry';
 import { busTrip } from './busTrip';
 import { eveningErrands } from './errands';
+import { dateNight } from './dateNight';
 
 /** All playable missions. New scenarios plug in here using the shared engine. */
-export const MISSIONS: MissionDef[] = [groceryRun, cleanRoom, helpSibling, clinicVisit, cookMeal, doLaundry, busTrip, eveningErrands];
+export const MISSIONS: MissionDef[] = [groceryRun, cleanRoom, helpSibling, clinicVisit, cookMeal, doLaundry, busTrip, eveningErrands, dateNight];
 
 export function getMission(id: string): MissionDef | undefined {
   return MISSIONS.find((m) => m.id === id);
