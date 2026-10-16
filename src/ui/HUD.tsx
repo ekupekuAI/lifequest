@@ -9,6 +9,10 @@ import { dateTextWaiting } from '../missions/dateNight';
 import { LOCATION_NAMES, levelFor, useSnap } from './hooks';
 import { ItemIcon } from './art';
 import { Bar, Key } from './Modal';
+import { SCREEN_LIMITS } from '../core/conduct';
+import { phoneLock, todayConduct } from '../core/reels';
+import { formatDuration } from '../core/systems';
+import { openPhone } from './PhoneReels';
 import { currentSession } from '../services/family';
 import { openVoiceInbox, useCallSnap } from './PhoneCall';
 import { calls } from '../core/voiceMsg';
@@ -19,6 +23,30 @@ export function phonePress() {
   const unread = !store.state.run && dateTextWaiting(store);
   if ((currentSession() || calls.getSnapshot().inbox.length > 0) && !unread) openVoiceInbox();
   else store.callHome();
+}
+
+/** Small screen-time + sibling-mood chips (only shown when there's something to show). */
+function ConductChips() {
+  const { state } = useSnap();
+  const c = todayConduct(state);
+  const st = c.screenMinutes;
+  if (st <= 0 && c.tension <= 0) return null;
+  const tone = st >= SCREEN_LIMITS.scold ? 'bad' : st >= SCREEN_LIMITS.nudge ? 'warn' : 'ghost';
+  return (
+    <div className="conduct-chips">
+      {st > 0 && (
+        <span className={`pill st-chip ${tone}`} title={`Screen time today: ${formatDuration(st)} (reminder at ${SCREEN_LIMITS.nudge} min)`} aria-label={`Screen time today ${formatDuration(st)}`}>
+          📱 {formatDuration(st)}
+        </span>
+      )}
+      {c.tension > 0 && (
+        <span className="pill mood-chip" title={`Sibling mood: ${c.tension >= 70 ? 'about to explode' : c.tension >= 40 ? 'upset' : 'a bit grumpy'}`} aria-label="Sibling mood">
+          <span aria-hidden>{c.tension >= 40 ? '😤' : '😒'}</span>
+          <Bar value={c.tension} tone={c.tension >= 70 ? 'bad' : 'warn'} label="Sibling tension" />
+        </span>
+      )}
+    </div>
+  );
 }
 
 const PLACE_LABEL: Record<string, string> = { home: 'Home', town: 'the street', grocery: 'FreshMart', clinic: 'the clinic', city: 'the city centre', library: 'the library' };
@@ -227,6 +255,7 @@ function StatusColumn() {
           ⌂ {placeName(state.location).replace(/^the /, '')}
         </span>
       </div>
+      <ConductChips />
       {hours && hoursKey && (
         <span className={`pill hours-chip ${!hours.open ? 'bad' : hours.soon ? 'warn' : 'ghost'}`} title={`${hoursPlaceName(hoursKey)}: ${store.hoursLabel(hoursKey)}`}>
           {hoursPlaceName(hoursKey)} · {hours.text}
@@ -279,6 +308,16 @@ function StatusColumn() {
                   {count}
                 </span>
               )}
+            </button>
+          );
+        })()}
+        {(() => {
+          const lock = phoneLock(state);
+          const label = lock.locked && lock.until !== null ? `Phone taken away until ${formatClock(lock.until)}` : 'Phone (R)';
+          return (
+            <button className={`btn phone-btn ${lock.locked ? 'locked' : ''}`} onClick={(e) => { e.currentTarget.blur(); openPhone(); }} title={label} aria-label={label}>
+              📱<span className="lbl">R</span>
+              {lock.locked && <span className="lock" aria-hidden>🔒</span>}
             </button>
           );
         })()}

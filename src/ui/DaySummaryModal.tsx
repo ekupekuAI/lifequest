@@ -7,6 +7,10 @@ import { SKILL_LABELS, type SkillId } from '../domain/types';
 import { useSnap } from './hooks';
 import { Bar, Modal } from './Modal';
 import { OUTCOME_LABEL, OUTCOME_TONE } from './JournalPanel';
+import { SCREEN_LIMITS } from '../core/conduct';
+import { cleanDay, conductReflections, todayConduct } from '../core/reels';
+import { formatDuration } from '../core/systems';
+import './conduct.css';
 
 const MOODS = [
   { id: 'great', face: '😄', label: 'Great' },
@@ -53,6 +57,10 @@ export default function DaySummaryModal({ day }: { day: number }) {
   for (const r of sum.results) for (const s of r.skillsPracticed) skillCount.set(s, (skillCount.get(s) ?? 0) + 1);
   const skills = [...skillCount.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
   const busyRun = !!state.run;
+  // behaviour counters belong to the day being summarised (they reset when the next day starts)
+  const conductToday = todayConduct(state);
+  const cd = conductToday.day === sum.day ? conductToday : null;
+  const habitChips = cd ? conductReflections(cd) : [];
 
   const sleep = () => {
     const join = (chips: string[], text: string) => clean([...chips, clean(text)].filter(Boolean).join('; '));
@@ -143,6 +151,34 @@ export default function DaySummaryModal({ day }: { day: number }) {
               </span>
             ))}
           </div>
+        </div>
+      )}
+
+      {cd && (
+        <div className="section">
+          <h3>Habits today</h3>
+          <div className="kv conduct-kv">
+            <div>
+              <span className="label">📱 Screen time</span>
+              <b className={cd.screenMinutes >= SCREEN_LIMITS.scold ? 'bad' : cd.screenMinutes >= SCREEN_LIMITS.nudge ? 'warn' : ''}>{formatDuration(cd.screenMinutes)}</b>
+            </div>
+            <div>
+              <span className="label">🥊 Fights</span>
+              <b className={cd.fights ? 'bad' : ''}>{cd.fights}</b>
+            </div>
+            <div>
+              <span className="label">🚸 Road warnings</span>
+              <b className={cd.roadWarnings ? 'warn' : ''}>{cd.roadWarnings}</b>
+            </div>
+          </div>
+          {cleanDay(cd) ? (
+            <span className="small habit-good">✓ Calm, safe day — screens in check, no fights, careful on the road. Nice!</span>
+          ) : (
+            <>
+              <span className="small muted">Everyone has off days. Pick one thing to try tomorrow (it's saved with your reflection):</span>
+              <ChipPick options={habitChips} value={improve} onToggle={toggle(setImprove)} label="Habit to try tomorrow" />
+            </>
+          )}
         </div>
       )}
 

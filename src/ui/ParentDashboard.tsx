@@ -13,6 +13,115 @@ import { useSnap } from './hooks';
 import { Modal, Stars } from './Modal';
 import { Portrait } from './art';
 import { OUTCOME_LABEL, OUTCOME_TONE, ReflectionList } from './JournalPanel';
+import { SCREEN_LIMITS, markAlertsRead } from '../core/conduct';
+import { CONDUCT_ICON, CONDUCT_LABEL, SEVERITY_LABEL, cleanDay, phoneLock, todayConduct, unreadAlerts } from '../core/reels';
+import { formatDuration } from '../core/systems';
+import type { GameState } from '../domain/types';
+import './conduct.css';
+
+/** Who responded to a conduct event (member id, or an NPC key). */
+const responder = (by?: string) => (by ? (store.member(by)?.name ?? by.replace(/^npc:/, '')) : null);
+
+function BehaviourSection({ state, player }: { state: GameState; player: string }) {
+  const c = todayConduct(state);
+  const lock = phoneLock(state);
+  const alerts = state.conduct?.alerts ?? [];
+  const unread = unreadAlerts(state);
+  const log = c.log.slice(0, 12);
+  const stTone = c.screenMinutes >= SCREEN_LIMITS.scold ? 'bad' : c.screenMinutes >= SCREEN_LIMITS.nudge ? 'warn' : '';
+  return (
+    <div className="section behaviour">
+      <h3>
+        Behaviour · today{unread > 0 && <span className="pd-badge" aria-label={`${unread} unread alerts`}>{unread}</span>}
+      </h3>
+      <p className="muted behaviour-copy" style={{ margin: 0 }}>
+        If you're not online, LifeQuest's built-in parent reacts for you — these alerts show what happened.
+      </p>
+      <div className="kv conduct-kv">
+        <div title={`Reminder at ${SCREEN_LIMITS.nudge} min · scolding at ${SCREEN_LIMITS.scold} · phone taken at ${SCREEN_LIMITS.confiscate}`}>
+          <span className="label">📱 Screen time</span>
+          <b className={stTone}>{formatDuration(c.screenMinutes)}</b>
+        </div>
+        <div>
+          <span className="label">🥊 Fights</span>
+          <b className={c.fights ? 'bad' : ''}>{c.fights}</b>
+        </div>
+        <div>
+          <span className="label">🚸 Road warnings</span>
+          <b className={c.roadWarnings ? 'warn' : ''}>{c.roadWarnings}</b>
+        </div>
+        <div>
+          <span className="label">😴 Naps</span>
+          <b>{formatDuration(c.napMinutes)}</b>
+        </div>
+      </div>
+      {(lock.locked || c.tvBanned) && (
+        <div className="row wrap" style={{ gap: 4 }}>
+          {lock.locked && lock.until !== null && <span className="pill bad">📵 Phone taken until {formatClock(lock.until)}</span>}
+          {c.tvBanned && <span className="pill bad">📺 No TV today</span>}
+        </div>
+      )}
+      {cleanDay(c) && !log.some((e) => e.day === state.clock.day) && (
+        <p className="small habit-good boxed" style={{ margin: 0 }}>
+          ✓ A calm day so far — no screen-time, sibling or road-safety issues for {player}.
+        </p>
+      )}
+
+      {alerts.length > 0 && (
+        <>
+          <div className="row spread">
+            <span className="label">Alerts</span>
+            <button className="btn btn-sm" disabled={!unread} onClick={() => markAlertsRead(store)}>
+              Mark all as read
+            </button>
+          </div>
+          <ul className="alert-list">
+            {alerts.slice(0, 8).map((a) => (
+              <li key={a.id} className={`alert-row ${a.read ? 'read' : 'unread'}`}>
+                <span aria-hidden>{CONDUCT_ICON[a.kind]}</span>
+                <span className="grow">
+                  {a.text}
+                  <span className="tiny dim" style={{ display: 'block' }}>
+                    Day {a.day} · {formatClock(a.at)}
+                  </span>
+                </span>
+                {!a.read && <span className="new">NEW</span>}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+
+      <span className="label">Timeline</span>
+      {log.length ? (
+        <ol className="conduct-log" aria-label="Behaviour timeline">
+          {log.map((e, i) => {
+            const who = responder(e.by);
+            return (
+              <li key={`${e.day}-${e.at}-${i}`} className={`log-row sev-${e.severity}`}>
+                <span className="ico" aria-hidden>
+                  {CONDUCT_ICON[e.kind]}
+                </span>
+                <span className="small">
+                  {e.text}
+                  {e.lesson && <span className="cl-lesson">💡 {e.lesson}</span>}
+                  <span className="meta">
+                    {CONDUCT_LABEL[e.kind]} · {SEVERITY_LABEL[e.severity]} · Day {e.day} {formatClock(e.at)}
+                    {who && ` · handled by ${who}`}
+                  </span>
+                </span>
+              </li>
+            );
+          })}
+        </ol>
+      ) : (
+        <p className="muted small boxed" style={{ margin: 0 }}>
+          Nothing yet. Screen time, sibling fights and road-safety moments show up here as they happen.
+        </p>
+      )}
+    </div>
+  );
+}
 
 const STATUS_TONE: Partial<Record<MissionStatus, string>> = {
   assigned: 'sky',
@@ -79,7 +188,17 @@ export default function ParentDashboard({ onClose, fromTitle = false }: { onClos
 
   return (
     <Modal
-      title="Parent dashboard"
+      title={
+        <>
+          Parent dashboard
+          {unreadAlerts(state) > 0 && (
+            <span className="pd-badge" title="Unread behaviour alerts">
+              {unreadAlerts(state)}
+            </span>
+          )}
+        </>
+      }
+      label="Parent dashboard"
       icon="⚑"
       size="lg"
       onClose={onClose}
@@ -261,6 +380,7 @@ export default function ParentDashboard({ onClose, fromTitle = false }: { onClos
         </div>
 
         <div className="col">
+          <BehaviourSection state={state} player={player?.name ?? 'the player'} />
           <div className="section">
             <h3>Reflections</h3>
             {state.reflections?.length ? (

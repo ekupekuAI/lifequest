@@ -14,8 +14,11 @@ import { Bar, Modal } from './Modal';
 import { ItemIcon } from './art';
 import { ShoppingChecklist } from './ShoppingList';
 import { currentObjectiveId, hoursPlaceName, openStatus, time12 } from './HUD';
+import { SCREEN_LIMITS } from '../core/conduct';
+import { CONDUCT_ICON, batteryFor, cleanDay, phoneLock, todayConduct } from '../core/reels';
+import './conduct.css';
 
-type Tab = 'mission' | 'bag' | 'money' | 'savings' | 'town' | 'skills' | 'family' | 'rewards';
+type Tab = 'mission' | 'bag' | 'money' | 'savings' | 'town' | 'skills' | 'habits' | 'family' | 'rewards';
 const TABS: { id: Tab; label: string }[] = [
   { id: 'mission', label: 'Task' },
   { id: 'bag', label: 'Bag' },
@@ -23,6 +26,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'savings', label: 'Savings' },
   { id: 'town', label: 'Town' },
   { id: 'skills', label: 'Skills' },
+  { id: 'habits', label: 'Habits' },
   { id: 'family', label: 'Family' },
   { id: 'rewards', label: '🎁 Rewards' },
 ];
@@ -548,6 +552,74 @@ function SkillsTab() {
   );
 }
 
+function HabitsTab() {
+  const { state } = useSnap();
+  const c = todayConduct(state);
+  const lock = phoneLock(state);
+  const lessons = c.log.filter((e) => e.lesson).slice(0, 5);
+  const st = c.screenMinutes;
+  return (
+    <>
+      <div className="section">
+        <h3>Today</h3>
+        <div className="dim-row habit-row">
+          <span>📱 Screens</span>
+          <Bar value={st} max={SCREEN_LIMITS.confiscate} tone={st >= SCREEN_LIMITS.scold ? 'bad' : st >= SCREEN_LIMITS.nudge ? 'warn' : 'good'} label="Screen time today" />
+          <span className="v">{formatDuration(st)}</span>
+        </div>
+        <div className="dim-row habit-row">
+          <span>😤 Sibling</span>
+          <Bar value={c.tension} tone={c.tension >= 70 ? 'bad' : c.tension >= 40 ? 'warn' : 'good'} label="Sibling tension" />
+          <span className="v">{c.tension >= 70 ? 'tense' : c.tension >= 40 ? 'upset' : 'calm'}</span>
+        </div>
+        <div className="kv conduct-kv">
+          <div>
+            <span className="label">Fights</span>
+            <b className={c.fights ? 'bad' : ''}>{c.fights}</b>
+          </div>
+          <div>
+            <span className="label">Road warnings</span>
+            <b className={c.roadWarnings ? 'warn' : ''}>{c.roadWarnings}</b>
+          </div>
+          <div>
+            <span className="label">Naps</span>
+            <b>{formatDuration(c.napMinutes)}</b>
+          </div>
+          <div>
+            <span className="label">Battery</span>
+            <b>{batteryFor(st)}%</b>
+          </div>
+        </div>
+        {lock.locked && lock.until !== null && <span className="pill bad" style={{ alignSelf: 'flex-start' }}>📵 Phone taken until {formatClock(lock.until)}</span>}
+        {cleanDay(c) && <span className="small habit-good">✓ Good habits so far today. Keep it up!</span>}
+        <span className="tiny muted">
+          Screens: a reminder at {SCREEN_LIMITS.nudge} min, a parent steps in at {SCREEN_LIMITS.scold}, the phone goes away at {SCREEN_LIMITS.confiscate}. Counters reset each morning.
+        </span>
+      </div>
+      <div className="section">
+        <h3>Lessons learned</h3>
+        {lessons.length ? (
+          <ul className="col" style={{ gap: 4 }}>
+            {lessons.map((e, i) => (
+              <li key={`${e.day}-${e.at}-${i}`} className="row boxed habit-line" style={{ padding: '4px 8px', alignItems: 'flex-start' }}>
+                <span aria-hidden>{CONDUCT_ICON[e.kind]}</span>
+                <span className="grow">
+                  {e.lesson}
+                  <span className="tiny dim" style={{ display: 'block' }}>
+                    {e.text} · Day {e.day}
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="muted small">Nothing yet — lessons from everyday choices (screens, siblings, roads) collect here.</p>
+        )}
+      </div>
+    </>
+  );
+}
+
 export function ReflectionList({ list, max = 10 }: { list: { day: number; wentWell: string; improve: string; mood: string }[]; max?: number }) {
   return (
     <ul className="col reflections">
@@ -617,6 +689,7 @@ export default function JournalPanel() {
         {tab === 'savings' && <SavingsTab />}
         {tab === 'town' && <TownTab />}
         {tab === 'skills' && <SkillsTab />}
+        {tab === 'habits' && <HabitsTab />}
         {tab === 'family' && <MemoryPanel />}
         {tab === 'rewards' && <RewardsBoard mode="child" />}
       </div>

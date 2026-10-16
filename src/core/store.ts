@@ -54,6 +54,7 @@ const CHALLENGES: Record<string, ChallengeDef> = { ...BASE_CHALLENGES, ...HOME_C
 import { EventBus } from './events';
 import { fmt } from '../missions/format';
 import { memoryChat, missionLock, onNewDay, rememberResult } from './memory';
+import { bedMenu, familyRemark, homeBusy, isSibling, morningAlarm, siblingTalk, tvInteract } from './homeLife';
 import { sfx } from './sfx';
 import type { GameRepository } from '../services/repository';
 import { createRepository } from '../services/repository';
@@ -885,6 +886,9 @@ export class GameStore {
         return this.openModal({ type: 'board' });
       case 'bed':
         return this.bedInteract();
+      case 'tv':
+      case 'sofa':
+        return tvInteract(this);
       case 'bus-stop': {
         const now = this.state.clock.minutes;
         const next = Math.ceil(now / 20) * 20;
@@ -932,12 +936,22 @@ export class GameStore {
     const offers = this.availableMissions().filter(
       (x) => x.avail.ok && x.def.assignerRoles.includes(m.role) && !this.doneToday(x.def.id),
     );
-    if (!offers.length) return this.say([{ speaker: m.name, portrait: m.id, text: this.chatLine(m, false) }]);
+    // siblings: play, help, tease, fight, make up (see core/homeLife.ts)
+    if (isSibling(m) && this.state.location === 'home') {
+      if (homeBusy(this)) return;
+      return siblingTalk(
+        this,
+        m,
+        offers.map((o) => ({ label: `${o.def.icon} ${o.def.title}`, hint: o.def.summary, run: () => this.offerMission(o.def.id, m.id) })),
+      );
+    }
+    const remark = familyRemark(this, m);
+    if (!offers.length) return this.say([{ speaker: m.name, portrait: m.id, text: remark ?? this.chatLine(m, false) }]);
     this.say([
       {
         speaker: m.name,
         portrait: m.id,
-        text: `Hi ${this.player.name}! Could you help me with something?`,
+        text: `${remark ? `${remark} ` : ''}Hi ${this.player.name}! Could you help me with something?`,
         choices: [
           ...offers.slice(0, 3).map((o) => ({ label: `${o.def.icon} ${o.def.title}`, hint: o.def.summary, run: () => this.offerMission(o.def.id, m.id) })),
           { label: 'Not right now', run: () => this.say([{ speaker: m.name, portrait: m.id, text: this.chatLine(m, false) }]) },
@@ -1026,17 +1040,9 @@ export class GameStore {
   }
 
   private bedInteract() {
-    if (this.state.run) return this.say([{ speaker: '', text: "It's not bedtime yet — you have a task to finish." }]);
-    this.say([
-      {
-        speaker: '',
-        text: 'Go to sleep and start a new day? (Energy refills, new tasks become available.)',
-        choices: [
-          { label: 'Sleep until tomorrow', run: () => this.openModal({ type: 'day-summary', day: this.state.clock.day }) },
-          { label: 'Not yet', run: () => {} },
-        ],
-      },
-    ]);
+    // naps (also mid-task — with consequences), sleeping for the night, morning alarm: core/homeLife.ts
+    if (homeBusy(this)) return;
+    bedMenu(this);
   }
 
   addReflection(r: { wentWell: string; improve: string; mood: string }) {
@@ -1068,11 +1074,15 @@ export class GameStore {
     const allowance = money(ALLOWANCE_BASE);
     this.give(allowance, 'Daily pocket money');
     this.toast(`Day ${this.state.clock.day}! You got ${formatMoney(allowance)} pocket money.`, 'good');
-    try {
-      onNewDay(this);
-    } catch (e) {
-      console.warn('memory', e);
-    }
+    const newDayChat = () => {
+      try {
+        onNewDay(this);
+      } catch (e) {
+        console.warn('memory', e);
+      }
+    };
+    // slept in bed: the morning alarm scene plays first, then the family's new-day chat
+    if (!morningAlarm(this, newDayChat)) newDayChat();
     this.notify();
     this.save();
   }

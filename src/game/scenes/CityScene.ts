@@ -5,6 +5,7 @@ import { store } from '../../core/store';
 import type { GameState, LocationId } from '../../domain/types';
 import { busStopped, installTownHandlers } from '../bus';
 import { BusView, openSign } from './TownScene';
+import { Traffic } from '../traffic';
 
 const W = 34;
 const H = 22;
@@ -39,6 +40,7 @@ function buildRows(): string[] {
 
 export class CityScene extends WorldScene {
   private busView?: BusView;
+  private traffic?: Traffic;
 
   constructor() {
     super('City');
@@ -118,6 +120,27 @@ export class CityScene extends WorldScene {
     this.npc({ id: 'cfolk3', texture: 'char:folk:3', x: SHELTER_X + 36, y: b(16) - 2, facing: 'down', label: 'Say hi', flavor: '"Waiting for the 12 too? It comes every 20 minutes — at :00, :20 and :40."' });
 
     this.busView = new BusView(this, 'city', STOP_X, b(19) - 2, 'Sunrise Street');
+    this.traffic = new Traffic(
+      { scene: this, player: () => this.player, facing: () => this.facing },
+      {
+        place: 'City Centre',
+        road: {
+          top: b(16),
+          bottom: b(19),
+          lanes: [
+            { dir: 1, top: b(16), bottom: b(17) + 8 },
+            { dir: -1, top: b(17) + 8, bottom: b(19) },
+          ],
+          zebras: [{ x0: 14 * T, x1: 16 * T }],
+        },
+        laneY: [b(17) + 5, b(19) - 3],
+        width: W * T,
+        seed: 34,
+        bus: { view: this.busView, lane: 1 },
+        // stepping off the kerb to the open door of the docked Bus 12 is fine
+        safeSpot: () => (busStopped(store, 'city') === 12 ? { x0: STOP_X - 60, x1: STOP_X + 10, y0: b(16) - 4, y1: b(16) + 14 } : null),
+      },
+    );
   }
 
   protected afterCreate() {
@@ -129,7 +152,8 @@ export class CityScene extends WorldScene {
     return to === 'library' ? null : { x: SHELTER_X, y: b(16) - 14 };
   }
 
-  protected tick() {
-    this.busView?.sync(this.player);
+  protected tick(delta: number) {
+    // traffic drives the bus too (it brakes for pedestrians, then keeps to its timetable)
+    this.traffic?.update(delta);
   }
 }

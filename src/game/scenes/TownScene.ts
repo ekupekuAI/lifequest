@@ -10,6 +10,7 @@ import { partnerMode } from '../../missions/dateNight';
 import type { NpcSpec } from './WorldScene';
 import { installMarketHandlers, MARKET_TARGET, todaysVendor } from '../market';
 import { region } from '../../domain/region';
+import { Traffic } from '../traffic';
 
 /** Minimal view of a WorldScene NPC actor (the type itself is private to WorldScene). */
 interface PartnerActor {
@@ -57,10 +58,22 @@ function buildRows(): string[] {
   return g.map((r) => r.join(''));
 }
 
-/** Bus sprite that follows the shared timetable at one stop (drives in, waits, drives away to the left). */
+/**
+ * Bus sprite that follows the shared timetable at one stop (drives in, waits, drives away to the left).
+ * Traffic can `hold` it back (someone in the road, a car queued ahead): it brakes smoothly, waits,
+ * then catches up with the timetable instead of teleporting.
+ */
 export class BusView {
   private img: Phaser.GameObjects.Image;
   private last: string | null = null;
+  /** actual centre x and speed (px/s, positive = driving left) */
+  x = -300;
+  v = 0;
+  phase: 'arriving' | 'stopped' | 'leaving' | null = null;
+  /** furthest-left centre x the bus may reach right now (null = free to follow the timetable) */
+  hold: number | null = null;
+  private shown = false;
+  private lastSched = 0;
   constructor(
     private scene: Phaser.Scene,
     private stop: Stop,
@@ -71,13 +84,17 @@ export class BusView {
     this.img = scene.add.image(-300, y, 'bus').setOrigin(0.5, 1).setFlipX(true).setVisible(false).setDepth(y);
   }
 
+  get image() {
+    return this.img;
+  }
+
   /** x position of the open front door (the bus faces left, so it is left of centre) */
   get doorX() {
     return this.stopX - 26;
   }
 
   /** Update the sprite; returns the bus's horizontal extent when it is on screen. */
-  sync(player?: { x: number; y: number }): { x0: number; x1: number; stopped: boolean } | null {
+  sync(player?: { x: number; y: number }, delta = 16.7): { x0: number; x1: number; stopped: boolean } | null {
     const p = busPhase(store, this.stop);
     const state = p ? `${p.route}:${p.phase}:${p.at}` : null;
     const near = !!player && Math.abs(player.x - this.stopX) < 170 && Math.abs(player.y - this.y) < 90;
@@ -90,17 +107,43 @@ export class BusView {
       }
       this.last = state;
     }
-    if (!p) {
+    // a bus that was held up keeps driving off the map after its timetable slot ends (no vanishing)
+    const lingering = !p && this.shown && this.x > -120;
+    this.phase = p?.phase ?? (lingering ? 'leaving' : null);
+    if (!p && !lingering) {
       this.img.setVisible(false);
+      this.shown = false;
+      this.v = 0;
       return null;
     }
-    const key = p.route === 12 ? 'bus' : 'bus-7';
+    const key = !p ? this.img.texture.key : p.route === 12 ? 'bus' : 'bus-7';
     if (this.img.texture.key !== key && this.scene.textures.exists(key)) this.img.setTexture(key);
-    let x = this.stopX;
-    if (p.phase === 'arriving') x = this.stopX + 150 * (1 - Math.sin((p.t * Math.PI) / 2));
-    if (p.phase === 'leaving') x = this.stopX - 760 * p.t * p.t;
-    this.img.setPosition(Math.round(x), this.y).setVisible(true);
-    return { x0: x - 40, x1: x + 40, stopped: p.phase === 'stopped' };
+    let sched = this.stopX;
+    if (!p) sched = Math.min(this.lastSched, this.x - 400);
+    else if (p.phase === 'arriving') sched = this.stopX + 150 * (1 - Math.sin((p.t * Math.PI) / 2));
+    else if (p.phase === 'leaving') sched = this.stopX - 760 * p.t * p.t;
+    const sec = delta / 1000;
+    if (!this.shown) {
+      this.shown = true;
+      this.x = this.hold !== null ? Math.max(sched, this.hold) : sched;
+      this.lastSched = sched;
+      this.v = 0;
+    } else if (sec > 0) {
+      const schedV = p ? Math.max(0, (this.lastSched - sched) / sec) : 0;
+      this.lastSched = sched;
+      const want = this.hold !== null ? Math.max(sched, this.hold) : sched;
+      const d = this.x - want; // distance still to drive (leftwards)
+      if (d <= 0.01) this.v = 0;
+      else {
+        const held = this.hold !== null && this.hold >= sched;
+        const brakeCap = held ? Math.sqrt(2 * 200 * d) : Infinity; // brake smoothly into the hold point
+        const v = Math.min(d / sec, brakeCap, Math.max(schedV, this.v + 260 * sec));
+        this.v = v;
+        this.x -= v * sec;
+      }
+    }
+    this.img.setPosition(Math.round(this.x), this.y).setVisible(true);
+    return { x0: this.x - 40, x1: this.x + 40, stopped: p?.phase === 'stopped' };
   }
 }
 
@@ -111,7 +154,7 @@ const STOP_X = 640;
 
 export class TownScene extends WorldScene {
   private busView?: BusView;
-  private cars: { img: Phaser.GameObjects.Image; dir: 1 | -1; y: number; wait: number }[] = [];
+  private traffic?: Traffic;
   private rain?: Phaser.GameObjects.Particles.ParticleEmitter;
   private partner?: PartnerActor;
   private partnerShown: 'date' | 'stroll' | 'hidden' | null = null;
@@ -238,12 +281,32 @@ export class TownScene extends WorldScene {
       }
     }
 
-    // ---- bus & cars ----
+    // ---- bus & traffic ----
     this.busView = new BusView(this, 'town', STOP_X, b(13) - 1, 'City Centre');
-    this.cars = [
-      { img: this.add.image(-40, b(11) - 2, 'car-red').setDepth(b(11)), dir: 1, y: b(11) - 2, wait: 0 },
-      { img: this.add.image(W * T + 200, b(13) - 2, 'car-blue').setFlipX(true).setDepth(b(13)), dir: -1, y: b(13) - 2, wait: 0 },
-    ];
+    this.traffic = new Traffic(
+      { scene: this, player: () => this.player, facing: () => this.facing },
+      {
+        place: 'Sunrise Street',
+        road: {
+          top: b(10),
+          bottom: b(13),
+          lanes: [
+            { dir: 1, top: b(10), bottom: b(11) + 8 },
+            { dir: -1, top: b(11) + 8, bottom: b(13) },
+          ],
+          zebras: [
+            { x0: 6 * T, x1: 8 * T },
+            { x0: 24 * T, x1: 26 * T },
+          ],
+        },
+        laneY: [b(11) + 5, b(13) - 3],
+        width: W * T,
+        seed: 12,
+        bus: { view: this.busView, lane: 1 },
+        // stepping up to the open door of the docked bus is fine
+        safeSpot: () => (busStopped(store, 'town') !== null ? { x0: STOP_X - 60, x1: STOP_X + 10, y0: b(13) - 8, y1: b(14) + 4 } : null),
+      },
+    );
   }
 
   protected afterCreate() {
@@ -290,18 +353,8 @@ export class TownScene extends WorldScene {
   protected tick(delta: number) {
     this.syncPartner();
     this.syncVendor();
-    const bus = this.busView?.sync(this.player) ?? null;
-    // cars stop for pedestrians on or near the road ahead of them, and queue behind a bus
-    for (const car of this.cars) {
-      const ahead = (this.player.x - car.img.x) * car.dir;
-      const onRoad = this.player.y > b(10) - 4 && this.player.y < b(13) + 8;
-      const busAhead = !!bus && (car.dir === -1 ? car.img.x - bus.x1 : bus.x0 - car.img.x);
-      const blocked = (onRoad && ahead > 0 && ahead < 44) || (busAhead !== false && busAhead > 0 && busAhead < 46);
-      if (store.blocking) continue;
-      if (!blocked) car.img.x += car.dir * 70 * (delta / 1000);
-      if (car.dir === 1 && car.img.x > W * T + 60) car.img.x = -60 - Math.random() * 300;
-      if (car.dir === -1 && car.img.x < -60) car.img.x = W * T + 60 + Math.random() * 300;
-    }
+    // traffic: vehicles, the timetable bus, and how drivers react to the player on the road
+    this.traffic?.update(delta);
     // rain
     const raining = !!store.state.world['rainUntil'];
     if (raining && !this.rain && this.textures.exists('fx:raindrop')) {

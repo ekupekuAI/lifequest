@@ -43,6 +43,7 @@ import SettingsModal from './SettingsModal';
 import DaySummaryModal from './DaySummaryModal';
 import PhoneCall, { isPhoneModal, phoneEscape } from './PhoneCall';
 import { phonePress } from './HUD';
+import PhoneReels, { openPhone } from './PhoneReels';
 
 function dismissTutorial() {
   store.state.tutorialSeen = true;
@@ -97,6 +98,8 @@ function ModalRouter({ touch }: { touch: boolean }) {
       return <SettingsModal />;
     case 'day-summary':
       return <DaySummaryModal day={m.day} />;
+    case 'reels':
+      return <PhoneReels />;
     default:
       return null;
   }
@@ -129,6 +132,8 @@ export default function GameScreen() {
         phonePress();
       } else if (k === 'h' && !u.dialogue && !u.modal && store.state.settings?.hints !== false) {
         store.hint();
+      } else if (k === 'r' && !u.dialogue && (!u.modal || u.modal.type === 'reels')) {
+        openPhone();
       } else if (k === 'v' && !u.dialogue && !u.modal) {
         store.toggleView3d();
       }
