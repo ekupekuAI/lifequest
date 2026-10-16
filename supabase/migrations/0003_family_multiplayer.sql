@@ -963,6 +963,13 @@ create policy "family-voice member upload"
   with check (bucket_id = 'family-voice'
               and public.is_family_member(public.lq_try_uuid((storage.foldername(name))[1])));
 
+-- the uploader may delete their own clip (unsend)
+drop policy if exists "family-voice owner delete" on storage.objects;
+create policy "family-voice owner delete"
+  on storage.objects for delete
+  to authenticated
+  using (bucket_id = 'family-voice' and owner_id = (select auth.uid())::text);
+
 -- -----------------------------------------------------------------------------
 -- Realtime (RLS applies to postgres_changes subscribers)
 -- -----------------------------------------------------------------------------
