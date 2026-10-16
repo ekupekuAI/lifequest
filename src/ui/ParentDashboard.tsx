@@ -1,3 +1,6 @@
+import CustomMissionEditor from './CustomMissionEditor';
+import RewardsBoard from './RewardsBoard';
+import { assignCustomMission } from '../missions/custom';
 import { useState } from 'react';
 import { store } from '../core/store';
 import { formatClock } from '../core/systems';
@@ -41,11 +44,13 @@ export default function ParentDashboard({ onClose, fromTitle = false }: { onClos
     .availableMissions()
     // the optional teen date storyline is the player's own social life, not a family chore
     .filter((x) => x.def.category !== 'social')
+    .filter((x) => !x.def.id.startsWith('custom:'))
     .sort((a, b) => Number(b.avail.ok) - Number(a.avail.ok));
   const cur = region().currency;
   const maxBudget = money(5000);
   const diff = store.diff;
   const player = members.find((m) => m.role === 'player');
+  const [listOpen, setListOpen] = useState(false);
 
   function assign(missionId: string) {
     const def = getMission(missionId);
@@ -148,6 +153,29 @@ export default function ParentDashboard({ onClose, fromTitle = false }: { onClos
               {!guardians.length && <p className="muted small">No guardian in this family.</p>}
             </div>
             <span className="tiny muted">The player picks up the task by talking to this person at home.</span>
+          </div>
+          <div className="section">
+            <h3>Real shopping list</h3>
+            {listOpen ? (
+              <CustomMissionEditor
+                assignerName={store.member(by)?.name}
+                childName={player?.name}
+                onCancel={() => setListOpen(false)}
+                onSubmit={(spec) => {
+                  assignCustomMission(store, spec, by);
+                  setFlash(`List sent! Ask ${player?.name ?? 'the player'} to talk to ${store.member(by)?.name ?? 'you'}.`);
+                  setListOpen(false);
+                }}
+              />
+            ) : (
+              <button className="btn btn-good" disabled={!by} onClick={() => setListOpen(true)}>
+                📝 Turn your real shopping list into a mission
+              </button>
+            )}
+          </div>
+          <div className="section">
+            <h3>Family rewards</h3>
+            <RewardsBoard mode="parent" />
           </div>
           <div className="section">
             <h3>Task templates</h3>

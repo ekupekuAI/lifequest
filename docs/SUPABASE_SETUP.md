@@ -227,3 +227,45 @@ Players can switch back to browser **Voices**, **Babble** or **Off** at any time
 | plan or quota | Your ElevenLabs plan doesn't allow the model or voice, or your credits are used up |
 | Daily voice budget used up | Raise `TTS_DAILY_CHAR_CAP` or wait until tomorrow (UTC) |
 | Click or press a key once to allow sound | The browser blocked autoplay. Any click or key press unlocks audio |
+
+## Family multiplayer
+
+Parents and children play on their own devices, linked to one family. No
+passwords: each device signs in anonymously and claims one family member (a "seat").
+
+### Setup
+
+1. Anonymous sign-ins must be enabled (step 2 above).
+2. Run `supabase/migrations/0003_family_multiplayer.sql` (SQL editor, or
+   `npx supabase db query --linked -f supabase/migrations/0003_family_multiplayer.sql`).
+   It is safe to run more than once and doesn't change existing rows. It adds the
+   seat columns, `member_saves`, `member_status`, `family_messages`, the private
+   `family-voice` storage bucket, the join RPCs, and adds the live tables to the
+   `supabase_realtime` publication.
+
+### How joining works
+
+- A parent creates the family and gets two codes:
+  - **Family code** (`SUNNY-7KD2-Q9XM`): children join with it.
+  - **Parent code** (`P-7KD2Q-9XMRT`): other parents or guardians join with it.
+    A child with the family code can't take a parent seat.
+- Codes ignore case, spaces and dashes. Parents can create new codes at any
+  time, and the old ones stop working straight away.
+- Each device can make 20 code lookups every 10 minutes (60 per IP address).
+- If a child's browser data is wiped, that seat stays claimed by the old
+  device. A parent must **free the seat** before the child can join again.
+
+### What's stored
+
+| Table | Who reads | Who writes |
+| --- | --- | --- |
+| `member_saves` | the seat's device, the family's parents | the seat's device |
+| `member_status` | the family | the seat's device |
+| `family_messages` | parents: all; children: family-wide messages, messages to them, and their own | members (same family only) |
+| `assigned_missions` | the family | parents; a child can only update the status/result of its own tasks |
+| `family-voice/<family_id>/…` | the family (1-hour signed URLs) | members; uploaders can delete their own clips |
+
+Voice clips aren't deleted automatically yet. Remove old objects from the
+`family-voice` bucket in the dashboard, or with a scheduled job, if you want them
+gone after 7 days. As with cloud saves, everything a game writes (saves, status,
+scores) comes from the browser and isn't authoritative.

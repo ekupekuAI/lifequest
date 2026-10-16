@@ -642,6 +642,53 @@ const ICONS: Record<string, Draw> = {
     px(ctx, 8, 0, '#c9a070');
     hline(ctx, 6, 15, 4, '#c9b090');
   },
+  banana: (ctx) => {
+    // two curved bananas in a bunch, stems joined at the top-left
+    const y = PAL.yellow;
+    const rows = [
+      '..gg............',
+      '..gaa...........',
+      '...aAa..........',
+      '...aAAa.........',
+      '...aAAAa........',
+      '....aAAAa..bb...',
+      '....aAAAAabBBb..',
+      '.....aAAAAbBBBb.',
+      '.....dAAAAAbBBBc',
+      '......dAAAAAABBc',
+      '.......ddAAAAAAc',
+      '.........ddddcc.',
+    ];
+    sprite(ctx, 0, 2, rows, { g: G[1], a: y[2], A: y[3], b: y[2], B: y[4], d: y[1], c: '#5a3c2a' });
+  },
+  mango: (ctx) => {
+    // kidney-shaped mango, green shoulder blushing to orange-red
+    const o = PAL.orange;
+    ellipse(ctx, 3, 4, 10, 11, o[2]);
+    ellipse(ctx, 4, 5, 8, 8, o[3]);
+    ellipse(ctx, 5, 9, 6, 5, R[3]);
+    px(ctx, 6, 6, o[4]);
+    px(ctx, 7, 6, o[4]);
+    px(ctx, 5, 7, o[4]);
+    rect(ctx, 3, 5, 3, 3, G[3]);
+    px(ctx, 4, 4, G[4]);
+    // stem & leaf
+    rect(ctx, 7, 2, 1, 3, PAL.wood[2]);
+    sprite(ctx, 8, 1, ['###.', '.###'], { '#': G[2] });
+    px(ctx, 9, 1, G[3]);
+  },
+  apple: (ctx) => {
+    ellipse(ctx, 2, 4, 12, 11, R[2]);
+    ellipse(ctx, 3, 5, 9, 8, R[3]);
+    px(ctx, 5, 6, R[4]);
+    px(ctx, 5, 7, R[4]);
+    px(ctx, 6, 6, '#ffffff');
+    // dimple, stem & leaf
+    rect(ctx, 7, 4, 2, 1, R[1]);
+    vline(ctx, 8, 1, 4, PAL.wood[1]);
+    sprite(ctx, 9, 1, ['##.', '###', '.#.'], { '#': G[3] });
+    px(ctx, 10, 2, G[2]);
+  },
   'chopped-veg': (ctx) => {
     // small bowl of chopped carrot, onion, greens
     ellipse(ctx, 1, 6, 14, 6, W[3]);

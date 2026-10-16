@@ -24,6 +24,9 @@ export const ITEMS: Record<string, ItemDef> = {
   popcorn: { id: 'popcorn', name: 'Popcorn (small)', weight: 0.3, category: 'grocery' },
   'juice-box': { id: 'juice-box', name: 'Mango juice box', weight: 0.3, category: 'grocery' },
   'peanut-choc': { id: 'peanut-choc', name: 'Peanut crunch chocolate', weight: 0.3, category: 'grocery' },
+  banana: { id: 'banana', name: 'Banana', weight: 0.2, category: 'grocery' },
+  mango: { id: 'mango', name: 'Mango', weight: 0.3, category: 'grocery' },
+  apple: { id: 'apple', name: 'Apple', weight: 0.2, category: 'grocery' },
   // gear
   'cloth-bag': { id: 'cloth-bag', name: 'Cloth shopping bag', weight: 0, category: 'gear' },
   umbrella: { id: 'umbrella', name: 'Umbrella', weight: 0.5, category: 'gear' },
@@ -148,4 +151,39 @@ export function groceryPrice(item: string): number | undefined {
 /** Format an amount already in the current region's currency. */
 export function formatMoney(n: number): string {
   return formatMoneyIn(n);
+}
+
+/**
+ * The vegetable & fruit market cart in town. Sold by weight: `basePerKg` is the vendor's opening ask
+ * (base currency) and `perKg` how many inventory pieces make up a kilo (item ids match FreshMart's, so
+ * any list that needs tomatoes or potatoes accepts the cart's too).
+ */
+export interface MarketGood {
+  item: string;
+  label: string;
+  basePerKg: number;
+  perKg: number;
+  /** smallest amount the vendor weighs out, in kg */
+  minQty: number;
+  kind: 'veg' | 'fruit';
+}
+
+export const MARKET_GOODS: MarketGood[] = [
+  { item: 'tomato', label: 'Tomatoes', basePerKg: 45, perKg: 6, minQty: 0.5, kind: 'veg' },
+  { item: 'onion', label: 'Onions', basePerKg: 40, perKg: 6, minQty: 0.5, kind: 'veg' },
+  { item: 'potatoes', label: 'Potatoes', basePerKg: 30, perKg: 1, minQty: 1, kind: 'veg' },
+  { item: 'carrot', label: 'Carrots', basePerKg: 36, perKg: 2, minQty: 0.5, kind: 'veg' },
+  { item: 'banana', label: 'Bananas', basePerKg: 50, perKg: 6, minQty: 0.5, kind: 'fruit' },
+  { item: 'mango', label: 'Mangoes', basePerKg: 120, perKg: 4, minQty: 0.5, kind: 'fruit' },
+  { item: 'apple', label: 'Apples', basePerKg: 160, perKg: 6, minQty: 0.5, kind: 'fruit' },
+];
+
+export function marketGood(item: string): MarketGood | undefined {
+  return MARKET_GOODS.find((g) => g.item === item);
+}
+
+/** Base-currency price of one piece of `item` at FreshMart / the kiosk (undefined when not sold there). */
+export function shopUnitPrice(shop: 'grocery' | 'kiosk', item: string): number | undefined {
+  if (shop === 'grocery') return groceryPrice(item);
+  return KIOSK_SHELF.products.find((p) => p.item === item)?.price;
 }

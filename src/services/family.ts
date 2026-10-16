@@ -13,7 +13,7 @@
 // - Seats are tied to this device's anonymous Supabase session. If the browser's
 //   site data is wiped, a parent must free the seat (releaseSeat) before it can be re-claimed.
 import type { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js';
-import type { Assignment, GameState, LocationId, MissionStatus, Profile, Role, Settings } from '../domain/types';
+import type { Appearance, Assignment, CustomMissionSpec, GameState, LocationId, MissionStatus, Profile, Reward, Role, Settings } from '../domain/types';
 import { DEFAULT_SETTINGS } from '../domain/types';
 import { REGIONS, type RegionId } from '../domain/region';
 import { getSupabase } from './supabaseClient';
@@ -43,6 +43,8 @@ export interface FamilySeat {
   kind: SeatKind;
   /** another device already plays this seat */
   claimed: boolean;
+  /** the character's look from the family profile (for portraits) */
+  appearance?: Appearance;
 }
 
 export interface FamilyPreview {
@@ -88,6 +90,9 @@ export interface FamilyMessage {
   toGameMemberId: string | null; // null = whole family
   text: string;
   createdAt: string;
+  /** voice message: storage path in the private `family-voice` bucket (play via voiceUrl) */
+  audioPath?: string;
+  durationMs?: number;
 }
 
 export interface FamilyHandlers {
@@ -361,7 +366,7 @@ function requireSession(kind?: SeatKind): FamilySession {
 
 function withTimeout<T>(p: PromiseLike<T>, context: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new FamilyError(`${context}: the server did not respond in time — are you offline?`)), TIMEOUT_MS);
+    const timer = setTimeout(() => reject(new FamilyError(`${context}: network problem — the server did not respond in time. Are you offline?`)), TIMEOUT_MS);
     Promise.resolve(p).then(
       (v) => {
         clearTimeout(timer);
@@ -384,7 +389,7 @@ function describe(err: unknown, context: string): string {
   if (code === 'anonymous_provider_disabled' || lower.includes('anonymous sign-ins are disabled'))
     return 'Anonymous sign-ins are disabled in the Supabase project (Authentication → Providers → Anonymous).';
   if (lower.includes('failed to fetch') || lower.includes('networkerror') || lower.includes('load failed') || lower.includes('fetch failed'))
-    return `${context}: could not reach the server — are you offline?`;
+    return `${context}: network problem — could not reach the server. Are you offline?`;
   if (lower.includes('invalid api key') || lower.includes('no api key')) return 'The server rejected this app\'s key (check VITE_SUPABASE_ANON_KEY).';
   if (code === 'PGRST202' || code === 'PGRST205' || code === '42P01' || code === '42883')
     return `${context}: family play isn't set up on the server yet (run supabase/migrations/0003_family_multiplayer.sql).`;
@@ -459,7 +464,7 @@ interface MemberRow {
   kind: SeatKind | null;
   game_member_id: string | null;
   claimed_by: string | null;
-  character_config: { gameId?: unknown } | null;
+  character_config: { gameId?: unknown; appearance?: unknown } | null;
 }
 
 interface SeatInfo extends FamilySeat {
@@ -470,7 +475,7 @@ let seatCache: { familyId: string; byId: Map<string, SeatInfo>; byGame: Map<stri
 
 function rowToSeat(r: MemberRow): SeatInfo {
   const gid = r.game_member_id ?? (typeof r.character_config?.gameId === 'string' ? r.character_config.gameId : r.id);
-  return {
+  const seat: SeatInfo = {
     memberId: r.id,
     gameMemberId: gid,
     name: r.display_name,
@@ -479,6 +484,9 @@ function rowToSeat(r: MemberRow): SeatInfo {
     claimed: r.claimed_by !== null,
     playable: r.kind !== null,
   };
+  const look = obj(r.character_config?.appearance);
+  if (look && Object.keys(look).length) seat.appearance = look as unknown as Appearance;
+  return seat;
 }
 
 async function loadSeats(sb: SupabaseClient, familyId: string): Promise<NonNullable<typeof seatCache>> {
@@ -550,7 +558,7 @@ interface AssignmentRow {
   deadline_minutes: number | null;
   budget: number | string | null;
   note: string | null;
-  state: { createdAt?: unknown; resultId?: unknown; assignedBy?: unknown; missionId?: unknown } | null;
+  state: { createdAt?: unknown; resultId?: unknown; assignedBy?: unknown; missionId?: unknown; custom?: unknown } | null;
   result_id: string | null;
   assigned_at: string | null;
   mission_templates?: { slug?: string } | null;
@@ -581,9 +589,37 @@ function toAssignment(r: AssignmentRow, c: NonNullable<typeof seatCache>): (Assi
     toGameMemberId: to,
   };
   if (r.note) a.note = r.note;
+  const custom = customSpecOf(r.state?.custom);
+  if (custom) a.custom = custom;
   const resultId = r.result_id ?? (typeof r.state?.resultId === 'string' ? r.state.resultId : null);
   if (resultId) a.resultId = resultId;
   return a;
+}
+
+/** Bounded copy of a parent's custom shopping list (full cleanup happens in missions/custom.ts). */
+function customSpecOf(v: unknown): CustomMissionSpec | null {
+  const o = obj(v);
+  if (!o || !Array.isArray(o.items)) return null;
+  const items = o.items.slice(0, 10).flatMap((x) => {
+    const it = obj(x);
+    if (!it || typeof it.name !== 'string' || !it.name.trim()) return [];
+    const row: CustomMissionSpec['items'][number] = { name: it.name.slice(0, 32), qty: Math.max(1, Math.min(20, Math.round(Number(it.qty) || 1))) };
+    if (typeof it.itemId === 'string' && /^[a-z0-9-]{1,40}$/.test(it.itemId)) row.itemId = it.itemId;
+    if (typeof it.price === 'number' && Number.isFinite(it.price) && it.price > 0) row.price = Math.min(5000, it.price);
+    return [row];
+  });
+  if (!items.length) return null;
+  const store = o.store === 'kiosk' || o.store === 'market' ? o.store : 'grocery';
+  const budget = Number(o.budget);
+  const deadline = Number(o.deadlineMinutes);
+  return {
+    title: typeof o.title === 'string' ? o.title.slice(0, 60) : 'Family shopping list',
+    items,
+    store,
+    budget: Number.isFinite(budget) && budget >= 0 ? budget : 0,
+    deadlineMinutes: Number.isFinite(deadline) && deadline > 0 ? Math.min(480, Math.round(deadline)) : 90,
+    note: typeof o.note === 'string' ? o.note.slice(0, 200) : '',
+  };
 }
 
 interface MessageRow {
@@ -592,11 +628,13 @@ interface MessageRow {
   to_member_id: string | null;
   text: string;
   created_at: string;
+  audio_path?: string | null;
+  duration_ms?: number | null;
 }
 
 function toMessage(r: MessageRow, c: NonNullable<typeof seatCache>): FamilyMessage {
   const from = c.byId.get(r.from_member_id);
-  return {
+  const m: FamilyMessage = {
     id: r.id,
     fromGameMemberId: from?.gameMemberId ?? r.from_member_id,
     fromName: from?.name ?? 'Family',
@@ -604,6 +642,11 @@ function toMessage(r: MessageRow, c: NonNullable<typeof seatCache>): FamilyMessa
     text: r.text,
     createdAt: r.created_at,
   };
+  if (r.audio_path) {
+    m.audioPath = r.audio_path;
+    m.durationMs = r.duration_ms ?? 0;
+  }
+  return m;
 }
 
 interface StatusRow {
@@ -651,20 +694,25 @@ export async function previewCode(code: string): Promise<FamilyPreview | null> {
     family_name: string;
     kind: SeatKind;
     region: string | null;
-    seats: { member_id: string; game_member_id: string | null; name: string; role: Role; kind: SeatKind; claimed: boolean }[];
+    seats: { member_id: string; game_member_id: string | null; name: string; role: Role; kind: SeatKind; claimed: boolean; appearance?: unknown }[];
   } | null>('Check code', sb.rpc('preview_code', { p_code: normalizeCode(code) }));
   if (!res) return null;
   const preview: FamilyPreview = {
     familyName: res.family_name,
     kind: res.kind,
-    seats: (res.seats ?? []).map((s) => ({
-      memberId: s.member_id,
-      gameMemberId: s.game_member_id ?? s.member_id,
-      name: s.name,
-      role: s.role,
-      kind: s.kind,
-      claimed: !!s.claimed,
-    })),
+    seats: (res.seats ?? []).map((s) => {
+      const seat: FamilySeat = {
+        memberId: s.member_id,
+        gameMemberId: s.game_member_id ?? s.member_id,
+        name: s.name,
+        role: s.role,
+        kind: s.kind,
+        claimed: !!s.claimed,
+      };
+      const look = obj(s.appearance);
+      if (look && Object.keys(look).length) seat.appearance = look as unknown as Appearance;
+      return seat;
+    }),
   };
   const flag = res.region && res.region in REGIONS ? REGIONS[res.region as RegionId].flag : undefined;
   if (flag) preview.regionFlag = flag;
@@ -673,7 +721,7 @@ export async function previewCode(code: string): Promise<FamilyPreview | null> {
 
 /** Join with a code and claim a seat. `newChildName` adds a new child seat instead of claiming one. */
 export async function joinFamily(code: string, seat: { memberId?: string; newChildName?: string }): Promise<FamilySession> {
-  if (!codeKind(code)) throw new FamilyError("That doesn't look like a family code. Check it and try again.");
+  if (!codeKind(code)) throw new FamilyError('That is an invalid code. Check it and try again.');
   const name = seat.newChildName?.trim();
   if (!seat.memberId && !name) throw new FamilyError('Pick who you are, or enter your name.');
   const sb = client();
@@ -686,7 +734,7 @@ export async function joinFamily(code: string, seat: { memberId?: string; newChi
       p_new_child_name: seat.memberId ? null : (name ?? null),
     }),
   );
-  if (!res) throw new FamilyError("That code doesn't match any family. Check it and try again.");
+  if (!res) throw new FamilyError("That is an invalid code — it doesn't match any family. Check it and try again.");
   const session = toSession(res);
   seatCache = null;
   writeSession(session);
@@ -813,7 +861,7 @@ export async function pushAssignment(a: Assignment, toGameMemberId: string): Pro
         deadline_minutes: finite(a.deadlineMinutes) && a.deadlineMinutes > 0 ? Math.round(a.deadlineMinutes) : null,
         budget: finite(a.budget) && a.budget >= 0 ? Math.round(a.budget * 100) / 100 : null,
         note: a.note ? a.note.slice(0, 500) : null,
-        state: { gameAssignmentId: a.id, createdAt: a.createdAt, assignedBy: a.assignedBy },
+        state: { gameAssignmentId: a.id, createdAt: a.createdAt, assignedBy: a.assignedBy, ...(a.custom ? { custom: customSpecOf(a.custom) } : {}) },
         result_id: a.resultId ?? null,
       },
       { onConflict: 'family_id,game_assignment_id' },
@@ -888,7 +936,7 @@ export async function fetchMessages(limit = 50): Promise<FamilyMessage[]> {
       'Messages',
       sb
         .from('family_messages')
-        .select('id, from_member_id, to_member_id, text, created_at')
+        .select('id, from_member_id, to_member_id, text, created_at, audio_path, duration_ms')
         .eq('family_id', s.familyId)
         .order('created_at', { ascending: false })
         .limit(n),
@@ -896,6 +944,65 @@ export async function fetchMessages(limit = 50): Promise<FamilyMessage[]> {
     seats(sb, s.familyId),
   ]);
   return (rows ?? []).map((r) => toMessage(r, c)).reverse();
+}
+
+const VOICE_BUCKET = 'family-voice';
+const VOICE_MAX_MS = 30_000;
+const VOICE_MAX_BYTES = 2 * 1024 * 1024;
+
+function audioExt(type: string): string {
+  if (type.includes('webm')) return 'webm';
+  if (type.includes('ogg')) return 'ogg';
+  if (type.includes('mp4') || type.includes('m4a') || type.includes('aac')) return 'm4a';
+  if (type.includes('mpeg')) return 'mp3';
+  if (type.includes('wav')) return 'wav';
+  return 'webm';
+}
+
+function randomId(): string {
+  const c = (globalThis as { crypto?: Crypto }).crypto;
+  if (c?.randomUUID) return c.randomUUID();
+  return Array.from(cryptoBytes(16), (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/** Voice nudge (<= 30 s): uploads the clip to the family's private folder, then posts a message pointing at it. */
+export async function sendVoiceMessage(toGameMemberId: string | null, blob: Blob, durationMs: number): Promise<void> {
+  const s = requireSession();
+  if (!blob || !blob.size) throw new FamilyError('The recording is empty.');
+  if (blob.size > VOICE_MAX_BYTES) throw new FamilyError('That recording is too large (max 2 MB).');
+  const ms = Math.max(0, Math.min(VOICE_MAX_MS + 1000, Math.round(Number(durationMs) || 0)));
+  const sb = client();
+  await ensureAuth(sb);
+  let to: string | null = null;
+  if (toGameMemberId) {
+    const c = await seats(sb, s.familyId, undefined, toGameMemberId);
+    const seat = c.byGame.get(toGameMemberId);
+    if (!seat) throw new FamilyError(`Send voice message: ${toGameMemberId} is not in this family.`);
+    to = seat.memberId;
+  }
+  const type = (blob.type || 'audio/webm').split(';')[0];
+  const path = `${s.familyId}/${randomId()}.${audioExt(type)}`;
+  await run('Send voice message', sb.storage.from(VOICE_BUCKET).upload(path, blob, { contentType: type, upsert: false }));
+  await run(
+    'Send voice message',
+    sb.from('family_messages').insert({
+      family_id: s.familyId,
+      from_member_id: s.memberId,
+      to_member_id: to,
+      text: `🎤 Voice message (${Math.max(1, Math.round(ms / 1000))} s)`,
+      audio_path: path,
+      duration_ms: ms,
+    }),
+  );
+}
+
+/** A short-lived (1 h) URL to play a voice message's audio. */
+export async function voiceUrl(audioPath: string): Promise<string> {
+  const sb = client();
+  await ensureAuth(sb);
+  const res = await run<{ signedUrl: string } | null>('Play voice message', sb.storage.from(VOICE_BUCKET).createSignedUrl(audioPath, 3600));
+  if (!res?.signedUrl) throw new FamilyError('Play voice message: the clip is no longer available.');
+  return res.signedUrl;
 }
 
 /** Live subscription for the current family. Returns an unsubscribe function. */
@@ -1005,4 +1112,79 @@ export function leaveFamilyOnThisDevice(): void {
   writeSession(null);
   seatCache = null;
   statusQueued = null;
+}
+
+// =============================================================================
+// Family rewards board — stored in families.settings.rewards (guardians may update
+// settings per RLS; every member can read). No schema change.
+// =============================================================================
+
+const REWARD_GOALS = ['tasksOnTime', 'savingsAtLeast', 'kindMemories', 'skillLevel', 'reflectionStreak', 'missionCompleted'];
+
+/** Bounded, validated copy of untrusted reward JSON. */
+export function shapeRewards(raw: unknown): Reward[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.slice(0, 30).flatMap((x) => {
+    const r = obj(x);
+    const g = obj(r?.goal);
+    if (!r || !g || typeof r.id !== 'string' || typeof r.text !== 'string' || !REWARD_GOALS.includes(String(g.type))) return [];
+    const target = Number(g.target);
+    if (!Number.isFinite(target) || target <= 0) return [];
+    const goal = { ...g, type: g.type, target: Math.min(1_000_000, target) } as Reward['goal'];
+    for (const k of ['skill', 'missionId', 'kind'] as const) if (k in g && typeof g[k] !== 'string') return [];
+    const out: Reward = {
+      id: r.id.slice(0, 40),
+      text: r.text.slice(0, 120),
+      goal,
+      createdAt: typeof r.createdAt === 'number' ? r.createdAt : 0,
+    };
+    if (typeof r.emoji === 'string') out.emoji = r.emoji.slice(0, 8);
+    if (typeof r.forMember === 'string') out.forMember = r.forMember.slice(0, 64);
+    if (typeof r.createdBy === 'string') out.createdBy = r.createdBy.slice(0, 64);
+    if (typeof r.reachedAt === 'number') out.reachedAt = r.reachedAt;
+    if (typeof r.givenAt === 'number') out.givenAt = r.givenAt;
+    return [out];
+  });
+}
+
+/** The family's rewards board ([] without a session). */
+export async function fetchFamilyRewards(): Promise<Reward[]> {
+  const s = currentSession();
+  if (!s) return [];
+  const sb = client();
+  await ensureAuth(sb);
+  const row = await run<{ settings: Record<string, unknown> | null } | null>(
+    'Rewards',
+    sb.from('families').select('settings').eq('id', s.familyId).maybeSingle(),
+  );
+  return shapeRewards(obj(row?.settings)?.rewards);
+}
+
+/** Parent only: replace the rewards board (other settings are kept). */
+export async function saveFamilyRewards(rewards: Reward[]): Promise<void> {
+  const s = requireSession('parent');
+  const sb = client();
+  await ensureAuth(sb);
+  const row = await run<{ settings: Record<string, unknown> | null } | null>(
+    'Save rewards',
+    sb.from('families').select('settings').eq('id', s.familyId).maybeSingle(),
+  );
+  const settings = { ...(obj(row?.settings) ?? {}), rewards: shapeRewards(rewards) };
+  await run('Save rewards', sb.from('families').update({ settings }).eq('id', s.familyId));
+}
+
+/** Parent only: a child's game save (read-only), e.g. to show rewards progress. null when not found. */
+export async function fetchChildSave(gameMemberId: string): Promise<GameState | null> {
+  const s = requireSession('parent');
+  const sb = client();
+  await ensureAuth(sb);
+  const c = await seats(sb, s.familyId, undefined, gameMemberId);
+  const seat = c.byGame.get(gameMemberId);
+  if (!seat) return null;
+  const row = await run<{ save: GameState | null } | null>(
+    'Child progress',
+    sb.from('member_saves').select('save').eq('member_id', seat.memberId).maybeSingle(),
+  );
+  const save = row?.save;
+  return save && typeof save === 'object' && save.version === 1 ? save : null;
 }

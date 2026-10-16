@@ -9,6 +9,17 @@ import { dateTextWaiting } from '../missions/dateNight';
 import { LOCATION_NAMES, levelFor, useSnap } from './hooks';
 import { ItemIcon } from './art';
 import { Bar, Key } from './Modal';
+import { currentSession } from '../services/family';
+import { openVoiceInbox, useCallSnap } from './PhoneCall';
+import { calls } from '../core/voiceMsg';
+
+/** Phone button / P key: family games open the phone (voice notes + call home); otherwise call home. */
+export function phonePress() {
+  if (store.blocking) return;
+  const unread = !store.state.run && dateTextWaiting(store);
+  if ((currentSession() || calls.getSnapshot().inbox.length > 0) && !unread) openVoiceInbox();
+  else store.callHome();
+}
 
 const PLACE_LABEL: Record<string, string> = { home: 'Home', town: 'the street', grocery: 'FreshMart', clinic: 'the clinic', city: 'the city centre', library: 'the library' };
 export const placeName = (loc: string) => LOCATION_NAMES[loc] ?? PLACE_LABEL[loc] ?? loc;
@@ -169,6 +180,7 @@ function StatusColumn() {
   const hours = hoursKey ? openStatus(hoursKey, state.clock.minutes) : null;
   const hints = state.settings?.hints !== false;
   const hintOn = hints && !!run && !!store.nextObjective();
+  const { missed } = useCallSnap();
   return (
     <div className="hud-tr">
       <div className="panel stat-chip">
@@ -250,19 +262,21 @@ function StatusColumn() {
           📓<span className="lbl">J</span>
         </button>
         {(() => {
-          const unread = !state.run && dateTextWaiting(store);
+          const unread = !state.run && dateTextWaiting(store) ? 1 : 0;
+          const count = unread + missed;
+          const what = [missed ? `${missed} missed call${missed > 1 ? 's' : ''}` : '', unread ? '1 new message' : ''].filter(Boolean).join(', ');
           return (
             <button
-              className="btn"
+              className={`btn ${missed ? 'phone-missed' : ''}`}
               style={{ position: 'relative' }}
-              onClick={(e) => { e.currentTarget.blur(); store.callHome(); }}
-              title={unread ? 'Phone — 1 new message (P)' : 'Call home (P)'}
-              aria-label={unread ? 'Phone, 1 new message' : 'Call home'}
+              onClick={(e) => { e.currentTarget.blur(); phonePress(); }}
+              title={count ? `Phone — ${what} (P)` : currentSession() ? 'Phone (P)' : 'Call home (P)'}
+              aria-label={count ? `Phone, ${what}` : currentSession() ? 'Phone' : 'Call home'}
             >
               📞<span className="lbl">P</span>
-              {unread && (
+              {count > 0 && (
                 <span aria-hidden="true" style={{ position: 'absolute', top: -4, right: -4, minWidth: 16, height: 16, borderRadius: 8, background: '#e4572e', color: '#fff', fontSize: 10, lineHeight: '16px', textAlign: 'center', fontWeight: 700 }}>
-                  1
+                  {count}
                 </span>
               )}
             </button>

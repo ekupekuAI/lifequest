@@ -1,0 +1,111 @@
+/* Family voice messages: recorder, player, in-game incoming call + phone inbox. */
+
+/* ---------- recorder ---------- */
+.vr { display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 2px solid var(--frame); border-radius: 6px; background: rgba(5, 6, 16, 0.35); }
+.vr.compact { padding: 6px; }
+.vr.is-rec { border-color: var(--coral); }
+.vr-rec-row { display: flex; align-items: center; gap: 10px; }
+.vr-mic {
+  flex: none; width: 64px; height: 64px; border-radius: 50%; border: 3px solid var(--frame); background: var(--panel-solid); color: var(--text);
+  font-size: 28px; display: grid; place-items: center; cursor: pointer; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+  box-shadow: var(--shadow); transition: transform 120ms ease, background 120ms ease;
+}
+.vr-mic:hover { border-color: var(--gold); }
+.vr-mic:active { transform: scale(0.94); }
+.vr-mic.on { background: var(--coral); border-color: #fff; animation: vr-pulse 1.1s ease-in-out infinite; }
+.vr-mic:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.vr-mic:disabled { opacity: 0.6; cursor: default; }
+.vr.compact .vr-mic { width: 52px; height: 52px; font-size: 22px; }
+.vr-status { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.vr-time { font-size: 1.15rem; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.vr-left { color: var(--muted); }
+.vr-left.warn { color: var(--gold); }
+.vr-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--coral); animation: vr-blink 1s steps(2) infinite; }
+.vr-meter { height: 8px; border-radius: 4px; background: rgba(255, 255, 255, 0.1); overflow: hidden; }
+.vr-meter > span { display: block; height: 100%; width: 100%; background: linear-gradient(90deg, var(--mint), var(--gold) 70%, var(--coral)); transform-origin: left center; transform: scaleX(0); transition: transform 60ms linear; }
+.vr-preview { display: flex; flex-direction: column; gap: 8px; }
+.vr-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.vr-btn { min-height: 44px; }
+.vr-send { flex: 1; min-width: 140px; }
+.vr-err { margin: 0; color: var(--coral); font-size: 0.95rem; }
+.vr-privacy { line-height: 1.2; }
+.chip.vr-chip { border-color: var(--sky); }
+
+/* ---------- player ---------- */
+.vp { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.vp-btn {
+  flex: none; width: 44px; height: 44px; border-radius: 50%; border: 2px solid var(--frame); background: var(--sky); color: #fff; font-size: 16px;
+  display: grid; place-items: center; cursor: pointer; box-shadow: var(--shadow);
+}
+.vp-btn.playing { background: var(--orange); }
+.vp-btn.error { background: var(--coral-d); }
+.vp-btn:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.vp-wave { flex: 1; min-width: 80px; height: 28px; display: flex; align-items: center; gap: 2px; }
+.vp-wave > span { flex: 1; min-height: 3px; border-radius: 2px; background: rgba(255, 255, 255, 0.25); transition: background 120ms linear; }
+.vp-wave > span.on { background: var(--gold); }
+.vp-dur { font-variant-numeric: tabular-nums; color: var(--muted); }
+.vp-err { flex-basis: 100%; color: var(--coral); }
+.pl-voice { display: flex; flex-direction: column; gap: 4px; margin-top: 2px; }
+
+/* ---------- incoming call (ringing banner, non-blocking) ---------- */
+.pc-ring {
+  position: absolute; z-index: 75; left: 50%; top: calc(60px + var(--safe-t)); transform: translateX(-50%);
+  width: min(420px, calc(100vw - 16px)); padding: 10px 12px; display: flex; align-items: center; gap: 10px;
+  border: 3px solid var(--mint); animation: pc-drop 260ms ease-out both;
+}
+.pc-ring-portrait { flex: none; border-radius: 50%; overflow: hidden; animation: pc-shake 1.6s ease-in-out infinite; }
+.pc-ring-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.pc-ring-title { font-family: var(--display); font-size: 0.7rem; line-height: 1.5; color: var(--gold); }
+.pc-ring-btns { display: flex; gap: 10px; flex: none; }
+.pc-round { width: 56px; height: 56px; border-radius: 50%; border: 3px solid #fff; color: #fff; font-size: 22px; display: grid; place-items: center; cursor: pointer; box-shadow: var(--shadow); }
+.pc-round.answer { background: var(--mint); animation: vr-pulse 1.2s ease-in-out infinite; }
+.pc-round.decline { background: var(--coral); }
+.pc-round:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+
+/* ---------- active call + inbox (blocking overlays) ---------- */
+.pc-backdrop {
+  position: absolute; inset: 0; z-index: 72; display: grid; place-items: center; background: rgba(8, 9, 22, 0.6);
+  padding: calc(10px + var(--safe-t)) 10px calc(10px + var(--safe-b)); animation: fade-in 160ms ease-out both;
+}
+.pc-call {
+  width: min(380px, calc(100vw - 20px)); max-height: 100%; overflow-y: auto; padding: 16px 14px; display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center;
+  border: 3px solid var(--mint); animation: pop-in 220ms ease-out both;
+}
+.pc-call-portrait { border-radius: 50%; padding: 4px; border: 3px solid var(--frame); }
+.pc-call-portrait.talking { border-color: var(--gold); animation: vr-pulse 1.2s ease-in-out infinite; }
+.pc-call-name { font-family: var(--display); font-size: 0.85rem; color: var(--gold); }
+.pc-wave { width: 100%; height: 44px; display: flex; align-items: center; gap: 2px; }
+.pc-wave > span { flex: 1; min-height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.22); transition: background 120ms linear; }
+.pc-wave > span.on { background: var(--mint); }
+.pc-call-btns { width: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.pc-call-btns > :last-child:nth-child(odd) { grid-column: 1 / -1; }
+.pc-call .vr { width: 100%; text-align: left; }
+.pc-big { min-height: 48px; font-size: 1.1rem; }
+
+.pc-inbox { width: min(440px, calc(100vw - 20px)); max-height: 100%; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; animation: pop-in 200ms ease-out both; }
+.pc-inbox-head { display: flex; align-items: center; justify-content: space-between; }
+.pc-inbox-head h2 { margin: 0; font-family: var(--display); font-size: 0.85rem; }
+.pc-inbox h3 { margin: 6px 0 0; }
+.pc-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.pc-item { display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 2px solid var(--frame); border-radius: 6px; background: rgba(5, 6, 16, 0.3); }
+.pc-item.missed { border-color: var(--coral); }
+.pc-item-head { display: flex; align-items: center; gap: 8px; }
+.pc-item-head .grow { flex: 1; min-width: 0; }
+.pc-to { display: flex; gap: 6px; flex-wrap: wrap; }
+.pc-to .chip[aria-checked='true'] { background: var(--sky); color: #fff; border-color: #fff; }
+.btn.phone-missed { border-color: var(--coral); animation: vr-pulse 1.6s ease-in-out infinite; }
+
+@keyframes vr-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(228, 87, 46, 0.55); } 50% { box-shadow: 0 0 0 8px rgba(228, 87, 46, 0); } }
+@keyframes vr-blink { 50% { opacity: 0.2; } }
+@keyframes pc-drop { from { opacity: 0; transform: translate(-50%, -16px); } to { opacity: 1; transform: translate(-50%, 0); } }
+@keyframes pc-shake { 0%, 60%, 100% { transform: rotate(0); } 65% { transform: rotate(-8deg); } 75% { transform: rotate(8deg); } 85% { transform: rotate(-5deg); } 95% { transform: rotate(4deg); } }
+
+@media (max-width: 420px) {
+  .pc-ring { flex-wrap: wrap; }
+  .pc-ring-btns { width: 100%; justify-content: space-around; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vr-mic.on, .vr-dot, .pc-ring, .pc-ring-portrait, .pc-round.answer, .pc-call-portrait.talking, .btn.phone-missed, .pc-call, .pc-inbox, .pc-backdrop { animation: none !important; }
+  .vr-meter > span, .vp-wave > span, .pc-wave > span { transition: none; }
+}

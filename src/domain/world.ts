@@ -32,6 +32,7 @@ export const OPENING_HOURS: Record<string, { open: number; close: number; label:
   post: { open: 10 * 60, close: 18 * 60 + 30, label: 'the post office' },
   mailbox: { open: 0, close: 18 * 60 + 30, label: 'the last mail collection' },
   bus: { open: 6 * 60, close: 22 * 60, label: 'the bus service' },
+  market: { open: 16 * 60, close: 20 * 60, label: 'the market cart' },
 };
 
 export function isOpenAt(place: string, minutes: number): boolean {

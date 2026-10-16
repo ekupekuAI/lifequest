@@ -589,6 +589,67 @@ function bench(ctx: Ctx) {
   }
 }
 
+/** Vegetable & fruit market cart: striped canopy on poles, crates of produce, a chalk price board and spoked wheels. */
+function marketCart(ctx: Ctx) {
+  const w = PAL.wood;
+  groundShadow(ctx, 3, 40, 42, 6);
+  // canopy poles
+  for (const x of [5, 42]) {
+    vline(ctx, x, 6, 26, w[1]);
+    vline(ctx, x + 1, 6, 26, w[3]);
+  }
+  // peaked canopy top + striped scalloped valance
+  for (let j = 0; j < 4; j++) {
+    const inset = 3 - j;
+    for (let i = inset; i < 48 - inset; i++) {
+      const st = Math.floor(i / 4) % 2 === 0 ? PAL.green : WH;
+      px(ctx, i, j, j === 0 ? st[4] : st[3]);
+    }
+  }
+  awning(ctx, 0, 4, 48, 6, PAL.green, WH, 4);
+  // chalk price board hanging from the canopy
+  rect(ctx, 30, 12, 13, 9, PAL.wood[2]);
+  rect(ctx, 31, 13, 11, 7, '#2f4a3a');
+  for (const [y, len] of [[14, 7], [16, 5], [18, 8]] as [number, number][]) {
+    hline(ctx, 32, y, 2, '#f4eee0');
+    hline(ctx, 35, y, len - 3, mix('#f4eee0', '#2f4a3a', 0.35));
+  }
+  vline(ctx, 33, 10, 2, PAL.metal[3]);
+  vline(ctx, 40, 10, 2, PAL.metal[3]);
+  // crates of produce on the deck
+  const crates: [number, (x: number, y: number) => void][] = [
+    [7, (x, y) => { for (let k = 0; k < 6; k++) { ellipse(ctx, x + (k % 3) * 3, y + Math.floor(k / 3) * 2, 3, 3, PAL.red[2]); px(ctx, x + (k % 3) * 3 + 1, y + Math.floor(k / 3) * 2, PAL.red[4]); } }],
+    [16, (x, y) => { for (let k = 0; k < 6; k++) { ellipse(ctx, x + (k % 3) * 3, y + Math.floor(k / 3) * 2, 3, 3, '#b85a86'); px(ctx, x + (k % 3) * 3 + 1, y + Math.floor(k / 3) * 2, '#f4c4d4'); } }],
+    [25, (x, y) => { for (let k = 0; k < 5; k++) { ellipse(ctx, x + (k % 3) * 3, y + Math.floor(k / 3) * 2, 4, 3, PAL.dirt[3]); px(ctx, x + (k % 3) * 3 + 1, y + Math.floor(k / 3) * 2 + 1, PAL.dirt[1]); } }],
+    [34, (x, y) => { for (let k = 0; k < 4; k++) { hline(ctx, x, y + k, 7, PAL.yellow[3]); px(ctx, x + 7, y + k, PAL.yellow[1]); } hline(ctx, x + 1, y + 4, 6, PAL.orange[3]); }],
+  ];
+  for (const [x, fill] of crates) {
+    rect(ctx, x - 1, 22, 9, 6, w[2]);
+    hline(ctx, x - 1, 22, 9, w[4]);
+    hline(ctx, x - 1, 25, 9, w[1]);
+    vline(ctx, x + 7, 22, 6, w[1]);
+    fill(x, 19);
+  }
+  // cart bed
+  rect(ctx, 3, 28, 42, 4, w[3]);
+  hline(ctx, 3, 28, 42, w[4]);
+  hline(ctx, 3, 31, 42, w[1]);
+  for (let x = 9; x < 45; x += 8) vline(ctx, x, 28, 4, w[2]);
+  // handle on the left
+  line(ctx, 3, 30, 0, 27, w[1]);
+  // spoked wheels
+  for (const cx of [12, 36]) {
+    ellipse(ctx, cx - 5, 32, 11, 11, PAL.dark[2]);
+    ellipse(ctx, cx - 4, 33, 9, 9, w[2]);
+    ellipse(ctx, cx - 3, 34, 7, 7, PAL.dark[3]);
+    line(ctx, cx - 3, 37, cx + 3, 37, w[3]);
+    line(ctx, cx, 34, cx, 40, w[3]);
+    line(ctx, cx - 2, 35, cx + 2, 39, w[3]);
+    line(ctx, cx + 2, 35, cx - 2, 39, w[3]);
+    px(ctx, cx, 37, PAL.metal[4]);
+  }
+}
+
 function streetlamp(ctx: Ctx) {
   const p = PAL.teal;
   // base
@@ -717,4 +778,5 @@ export const TOWN_PROPS: Record<string, PropDef> = {
   mailbox: { w: 8, h: 16, draw: mailbox },
   'sign-arrow': { w: 16, h: 16, draw: signArrow },
   manhole: { w: 16, h: 16, draw: manhole },
+  'market-cart': { w: 48, h: 44, draw: marketCart },
 };

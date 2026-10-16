@@ -1,3 +1,6 @@
+import CustomMissionEditor from './CustomMissionEditor';
+import RewardsBoard from './RewardsBoard';
+import { customAssignment } from '../missions/custom';
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { store } from '../core/store';
 import { formatClock, formatDuration } from '../core/systems';
@@ -14,6 +17,7 @@ import {
   regenerateCodes,
   releaseSeat,
   sendMessage,
+  sendVoiceMessage,
   subscribeFamily,
   updateAssignment,
   type FamilyMessage,
@@ -32,6 +36,8 @@ import { Portrait, kindOf } from './art';
 import { OUTCOME_LABEL, OUTCOME_TONE } from './JournalPanel';
 import { CopyButton, Loading, friendlyError, seatLook } from './FamilyGate';
 import './family.css';
+import VoiceRecorder, { VoicePlayer, voiceUrls } from './VoiceRecorder';
+import { isVoice } from '../core/voiceMsg';
 
 type LiveAssignment = Assignment & { toGameMemberId: string };
 
@@ -430,7 +436,7 @@ function ChildCard({
   onCancel: (a: LiveAssignment) => Promise<void>;
   onSent: (text: string) => void;
 }) {
-  const [panel, setPanel] = useState<null | 'assign' | 'nudge'>(null);
+  const [panel, setPanel] = useState<null | 'assign' | 'nudge' | 'voice'>(null);
   const st = child.status;
   const look = memberLook(child, profile);
   const now = Date.now();
@@ -560,6 +566,9 @@ function ChildCard({
         <button className={`btn ${panel === 'nudge' ? 'btn-primary' : ''}`} aria-expanded={panel === 'nudge'} onClick={() => setPanel((p) => (p === 'nudge' ? null : 'nudge'))}>
           💬 Send a nudge
         </button>
+        <button className={`btn ${panel === 'voice' ? 'btn-primary' : ''}`} aria-expanded={panel === 'voice'} onClick={() => setPanel((p) => (p === 'voice' ? null : 'voice'))}>
+          🎙️ Voice note
+        </button>
       </div>
 
       {panel === 'assign' && (
@@ -573,8 +582,10 @@ function ChildCard({
           }}
         />
       )}
-      {panel === 'nudge' && (
+      {(panel === 'nudge' || panel === 'voice') && (
         <NudgePanel
+          key={panel}
+          voiceFirst={panel === 'voice'}
           to={child.gameMemberId}
           toName={child.name}
           onSent={(t) => {
@@ -643,6 +654,7 @@ function AssignPanel({ child, session, settings, onDone }: { child: Child; sessi
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [listOpen, setListOpen] = useState(false);
   const templates = MISSIONS.filter((m) => m.category !== 'social');
   const diff = DIFFICULTY[settings?.difficulty ?? 'normal'];
   const cur = region().currency;
@@ -677,6 +689,28 @@ function AssignPanel({ child, session, settings, onDone }: { child: Child; sessi
 
   return (
     <div className="pl-panel" role="group" aria-label={`Assign a task to ${child.name}`}>
+      {listOpen ? (
+        <CustomMissionEditor
+          assignerName={session.displayName}
+          childName={child.name}
+          onCancel={() => setListOpen(false)}
+          onSubmit={async (spec) => {
+            setErr(null);
+            try {
+              const asg = customAssignment(spec, session.gameMemberId, child.gameMemberId);
+              await pushAssignment(asg, child.gameMemberId);
+              setListOpen(false);
+              onDone({ ...asg, toGameMemberId: child.gameMemberId } as LiveAssignment);
+            } catch (e) {
+              setErr(friendlyError(e));
+            }
+          }}
+        />
+      ) : (
+        <button className="btn btn-good" onClick={() => setListOpen(true)}>
+          📝 Our real shopping list…
+        </button>
+      )}
       <span className="label">Pick a task for {child.name}</span>
       <div className="pl-tpl-list scroll">
         {templates.map((def) => {
@@ -765,7 +799,8 @@ function AssignPanel({ child, session, settings, onDone }: { child: Child; sessi
   );
 }
 
-function NudgePanel({ to, toName, onSent }: { to: string | null; toName: string; onSent: (text: string) => void }) {
+function NudgePanel({ to, toName, onSent, voiceFirst = false }: { to: string | null; toName: string; onSent: (text: string) => void; voiceFirst?: boolean }) {
+  const [voiceMode, setVoiceMode] = useState(voiceFirst);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -787,6 +822,26 @@ function NudgePanel({ to, toName, onSent }: { to: string | null; toName: string;
     }
   }
 
+  if (voiceMode)
+    return (
+      <div className="pl-panel" aria-label={`Voice note to ${toName}`}>
+        <div className="row spread wrap">
+          <span className="label">🎙️ Voice note to {toName}</span>
+          <button type="button" className="btn btn-sm btn-ghost" onClick={() => setVoiceMode(false)}>
+            💬 Type instead
+          </button>
+        </div>
+        <VoiceRecorder
+          toLabel={`to ${toName}`}
+          onSend={async (blob, ms) => {
+            await sendVoiceMessage(to, blob, ms);
+            onSent('🎤 Voice message');
+          }}
+        />
+        <span className="tiny muted">{to ? `${toName}'s phone rings in the game and they hear your voice.` : "Everyone's phone rings in their game."}</span>
+      </div>
+    );
+
   return (
     <form className="pl-panel" onSubmit={send} aria-label={`Message ${toName}`}>
       <div className="pl-nudges" aria-label="Quick messages">
@@ -795,6 +850,9 @@ function NudgePanel({ to, toName, onSent }: { to: string | null; toName: string;
             {n}
           </button>
         ))}
+        <button type="button" className="chip vr-chip" onClick={() => setVoiceMode(true)}>
+          🎙️ Voice note
+        </button>
       </div>
       <label className="field">
         <span className="label">Message to {toName}</span>
@@ -850,7 +908,14 @@ function Feed({ messages, nameOf, onSent }: { messages: FamilyMessage[]; nameOf:
                 </span>
                 <span>{ago(m.createdAt)}</span>
               </div>
-              {m.text}
+              {isVoice(m) ? (
+                <div className="pl-voice">
+                  <span className="tiny muted">🎤 Voice message</span>
+                  <VoicePlayer id={m.id} src={() => voiceUrls.get(m.audioPath)} durationMs={m.durationMs} label={`Voice message from ${m.fromName}`} />
+                </div>
+              ) : (
+                m.text
+              )}
             </li>
           ))}
         </ul>
@@ -903,6 +968,13 @@ function SeatsPanel({
     );
   };
   return (
+    <>
+    <section className="panel fam-card" aria-labelledby="rewards-h">
+      <h2 id="rewards-h" className="eyebrow">
+        Family rewards
+      </h2>
+      <RewardsBoard mode="parent" />
+    </section>
     <section className="panel fam-card" aria-labelledby="seats-h">
       <h2 id="seats-h" className="eyebrow">
         Who's in
@@ -914,5 +986,6 @@ function SeatsPanel({
       </button>
       <span className="tiny muted">Lost a code, or shared it by mistake? New codes stop the old ones working.</span>
     </section>
+    </>
   );
 }

@@ -1,3 +1,4 @@
+import RewardCelebration from './RewardCelebration';
 import { Component, Suspense, lazy, useEffect, type ReactNode } from 'react';
 // Phaser is big: load the world on demand so the title screen appears instantly.
 const GameCanvas = lazy(() => import('../game/GameCanvas'));
@@ -40,6 +41,8 @@ import HelpModal, { ControlsList } from './HelpModal';
 import ConfirmModal from './ConfirmModal';
 import SettingsModal from './SettingsModal';
 import DaySummaryModal from './DaySummaryModal';
+import PhoneCall, { isPhoneModal, phoneEscape } from './PhoneCall';
+import { phonePress } from './HUD';
 
 function dismissTutorial() {
   store.state.tutorialSeen = true;
@@ -69,7 +72,7 @@ function Tutorial({ touch }: { touch: boolean }) {
 function ModalRouter({ touch }: { touch: boolean }) {
   const { ui } = useSnap();
   const m = ui.modal;
-  if (!m) return null;
+  if (!m || isPhoneModal(m)) return null; // the phone draws its own overlay (PhoneCall)
   switch (m.type) {
     case 'briefing':
       return <BriefingModal modal={m} />;
@@ -110,6 +113,7 @@ export default function GameScreen() {
       const u = store.ui;
       if (e.key === 'Escape') {
         e.preventDefault();
+        if (phoneEscape()) return;
         if (!store.state.tutorialSeen && (!u.modal || u.modal.type === 'help')) return dismissTutorial();
         if (u.modal) return store.openModal(null);
         if (u.feedback) return store.setUI({ feedback: null });
@@ -122,7 +126,7 @@ export default function GameScreen() {
         if (u.modal?.type === 'journal') store.openModal(null);
         else if (!u.modal) store.openModal({ type: 'journal' });
       } else if (k === 'p' && !u.dialogue && !u.modal) {
-        store.callHome();
+        phonePress();
       } else if (k === 'h' && !u.dialogue && !u.modal && store.state.settings?.hints !== false) {
         store.hint();
       } else if (k === 'v' && !u.dialogue && !u.modal) {
@@ -179,7 +183,9 @@ export default function GameScreen() {
         <DialoguePanel />
         <FeedbackBanner />
         <Toasts />
+        <RewardCelebration />
         <ModalRouter touch={touch} />
+        <PhoneCall />
       </div>
     </div>
   );

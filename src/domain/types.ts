@@ -238,6 +238,49 @@ export interface Assignment {
   status: MissionStatus;
   createdAt: number;
   resultId?: string;
+  /** a parent-made real-life errand ("turn your shopping list into a mission"); missionId is `custom:<key>` */
+  custom?: CustomMissionSpec;
+}
+
+/** Where a custom shopping mission is bought. */
+export type CustomStore = 'grocery' | 'kiosk' | 'market';
+
+/** A parent's real shopping list, played as a mission (see missions/custom.ts). */
+export interface CustomMissionSpec {
+  title: string;
+  /** itemId = existing game item it maps to; price = base-currency unit price for products added to the "Family list" shelf */
+  items: { name: string; qty: number; itemId?: string; price?: number }[];
+  store: CustomStore;
+  /** in the current region's currency */
+  budget: number;
+  deadlineMinutes: number;
+  note: string;
+}
+
+/** Goal types a family reward can track (see core/rewards.ts). */
+export type RewardGoal =
+  | { type: 'tasksOnTime'; target: number; sinceDay?: number }
+  | { type: 'savingsAtLeast'; target: number }
+  | { type: 'kindMemories'; target: number; kind?: Memory['kind'] }
+  | { type: 'skillLevel'; target: number; skill: SkillId }
+  | { type: 'reflectionStreak'; target: number }
+  | { type: 'missionCompleted'; target: number; missionId: string };
+
+/** A real-life reward a parent promises for in-game progress (honour system). */
+export interface Reward {
+  id: string;
+  /** what the child gets, e.g. "You choose Friday's movie 🎬" */
+  text: string;
+  emoji?: string;
+  goal: RewardGoal;
+  /** game member id of the child it is for ('player' = this device's player / everyone) */
+  forMember?: string;
+  createdBy?: string;
+  createdAt: number;
+  /** epoch ms when the child first reached the goal */
+  reachedAt?: number;
+  /** epoch ms when the parent marked it as given */
+  givenAt?: number;
 }
 
 export interface QueueCustomer {
@@ -305,6 +348,8 @@ export interface GameState {
   reflections: { day: number; wentWell: string; improve: string; mood: string }[];
   /** things the family remembers about the player's choices (see core/memory.ts) */
   memories?: Memory[];
+  /** family rewards board (offline: edited in the parent dashboard; family mode: mirrored from families.settings.rewards) */
+  rewards?: Reward[];
 }
 
 export interface Memory {

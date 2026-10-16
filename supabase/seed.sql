@@ -131,3 +131,14 @@ on conflict (slug) do update set
   difficulty  = excluded.difficulty,
   definition  = excluded.definition,
   is_active   = excluded.is_active;
+
+-- v4 missions
+insert into public.mission_templates (slug, title, description, category, difficulty, definition, is_active)
+values
+  ('market-day', 'Market Day', 'Bargain respectfully at the market cart for tomatoes and onions within budget.', 'errand', 2,
+   '{"budget": 100, "deadlineMinutes": 90, "location": "town", "skills": ["budget", "communication", "problem", "empathy"], "challenges": ["bruised-tomatoes", "wrong-weight", "free-chilli", "other-customer"]}'::jsonb, true),
+  ('date-night', 'Date on a Budget', 'Optional teen storyline: plan a park date on your own pocket money, be on time, listen, and respect a curfew.', 'social', 2,
+   '{"deadlineMinutes": 60, "location": "town", "skills": ["budget", "communication", "time", "responsibility"], "challenges": ["date-favour", "date-outfit", "date-opener", "date-honesty", "date-curfew"]}'::jsonb, true)
+on conflict (slug) do update set
+  title = excluded.title, description = excluded.description, category = excluded.category,
+  difficulty = excluded.difficulty, definition = excluded.definition, is_active = excluded.is_active;

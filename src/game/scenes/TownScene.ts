@@ -8,6 +8,8 @@ import { busPhase, busStopped, installTownHandlers, nextRoute12, type Stop } fro
 import { formatClock } from '../../core/systems';
 import { partnerMode } from '../../missions/dateNight';
 import type { NpcSpec } from './WorldScene';
+import { installMarketHandlers, MARKET_TARGET, todaysVendor } from '../market';
+import { region } from '../../domain/region';
 
 /** Minimal view of a WorldScene NPC actor (the type itself is private to WorldScene). */
 interface PartnerActor {
@@ -23,6 +25,8 @@ const night = (s: GameState) => s.clock.minutes % 1440 > 18.5 * 60;
 /** Where the partner waits during the date: right beside the park bench by the pond. */
 const DATE_SPOT = { x: 250, y: b(23) + 2 };
 const PARK = { x: 210, y: b(23), w: 140, h: 40 };
+/** The market cart: south of the sidewalk by the park entrance, facing the street. */
+const CART = { x: 280, y: b(17) };
 
 function buildRows(): string[] {
   const g: string[][] = Array.from({ length: H }, () => Array.from({ length: W }, () => 'g'));
@@ -111,6 +115,7 @@ export class TownScene extends WorldScene {
   private rain?: Phaser.GameObjects.Particles.ParticleEmitter;
   private partner?: PartnerActor;
   private partnerShown: 'date' | 'stroll' | 'hidden' | null = null;
+  private vendor?: PartnerActor;
 
   constructor() {
     super('Town');
@@ -203,6 +208,16 @@ export class TownScene extends WorldScene {
     this.prop({ key: 'sign-arrow', x: 168, y: b(15) });
     this.interact({ id: 'sign', x: 168, y: b(15) - 2, label: 'Read the signpost', flavor: '← Home (via garden path)   ↑ FreshMart · Corner shop · Clinic   → School · Bus stop (Bus 12 → City Centre)' });
 
+    // ---- market cart (open 4–8 PM): vendor behind the crates, open/closed sign beside it ----
+    this.prop({ key: 'market-cart', x: CART.x, y: CART.y, solid: { w: 44, h: 8 } });
+    const cartLabel = () => (store.isOpen('market') ? `Bargain at ${region().market.cart}` : `${region().market.cart} (closed)`);
+    this.interact({ id: MARKET_TARGET, x: CART.x, y: CART.y - 8, r: 26, label: cartLabel });
+    this.prop({ key: openSign('market'), x: CART.x + 36, y: CART.y - 4, depth: CART.y - 4 });
+    this.interact({ id: 'hours-market', x: CART.x + 36, y: CART.y - 6, label: 'Market opening hours', r: 10 });
+    const v = todaysVendor(store);
+    this.vendor = this.npc({ id: v.key, texture: `char:npc:${v.key}`, x: CART.x - 6, y: CART.y - 15, facing: 'down', talk: MARKET_TARGET, label: cartLabel(), solid: false }) as PartnerActor | undefined;
+    this.syncVendor();
+
     // ---- townsfolk ----
     this.npc({ id: 'folk1', texture: 'char:folk:1', x: 300, y: b(10), wander: { x: 200, y: b(9), w: 300, h: 10 }, label: 'Say hi', flavor: '"Evening! Busy day at FreshMart — the queue is long today."' });
     this.npc({ id: 'folk2', texture: 'char:folk:4', x: 500, y: b(15), wander: { x: 380, y: b(14) + 4, w: 220, h: 8 }, label: 'Say hi', flavor: '"Always cross at the zebra crossing, kiddo. Cars stop there."' });
@@ -233,6 +248,17 @@ export class TownScene extends WorldScene {
 
   protected afterCreate() {
     this.unsub.push(installTownHandlers(store));
+    this.unsub.push(installMarketHandlers(store));
+  }
+
+  /** The vendor packs up when the market closes (and is back the next evening). */
+  private syncVendor() {
+    const a = this.vendor;
+    if (!a) return;
+    const open = store.isOpen('market');
+    if (a.sprite.visible === open) return;
+    a.sprite.setVisible(open);
+    (a.sprite.getData('shadow') as Phaser.GameObjects.Image | undefined)?.setVisible(open);
   }
 
   /** The guide arrow leads to the bus stop when the next step is in the city. */
@@ -263,6 +289,7 @@ export class TownScene extends WorldScene {
 
   protected tick(delta: number) {
     this.syncPartner();
+    this.syncVendor();
     const bus = this.busView?.sync(this.player) ?? null;
     // cars stop for pedestrians on or near the road ahead of them, and queue behind a bus
     for (const car of this.cars) {

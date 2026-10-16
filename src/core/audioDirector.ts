@@ -151,7 +151,7 @@ class AudioDirector {
       music.stop();
     }
     const speaking = !!voice.speaking;
-    const duck = duckFactor({ dialogue: !!ui.dialogue, speaking, paused: ui.modal?.type === 'pause' });
+    const duck = duckFactor({ dialogue: !!ui.dialogue, speaking, paused: ui.modal?.type === 'pause' || ui.modal?.type === 'phone' });
     if (this.changed('duck', duck)) music.setDuck(duck);
 
     // results sting

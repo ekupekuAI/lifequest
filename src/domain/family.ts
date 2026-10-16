@@ -152,5 +152,16 @@ export const NPC_LOOKS: Record<string, NpcLook> = {
   receptionist: npc(() => region().npc.receptionist, { skin: SKIN_TONES[3], hair: HAIR_COLORS[0], hairStyle: 'bun', shirt: '#ffffff', pants: '#3d5a80' }, { pitch: 1.15, rate: 1, kind: 'female' }),
   driver: npc(() => region().npc.driver, { skin: SKIN_TONES[3], hair: HAIR_COLORS[0], hairStyle: 'short', shirt: '#2e86ab', pants: '#14213d' }, { pitch: 0.8, rate: 0.95, kind: 'male' }),
   librarian: npc(() => region().npc.librarian, { skin: SKIN_TONES[1], hair: HAIR_COLORS[4], hairStyle: 'bun', shirt: '#8e5ea2', pants: '#2b2d42' }, { pitch: 1.05, rate: 0.9, kind: 'elder-female' }),
+  // the market-cart vendor: a market woman in Nigeria, a man elsewhere (voice follows the region)
+  vendor: {
+    get name() {
+      return region().market.vendor;
+    },
+    appearance: { skin: SKIN_TONES[3], hair: HAIR_COLORS[0], hairStyle: 'short', shirt: '#f2c14e', pants: '#6b705c' },
+    get voice(): VoiceProfile {
+      return region().id === 'ng' ? { pitch: 1.1, rate: 1.05, kind: 'female' } : { pitch: 0.9, rate: 1.05, kind: 'male' };
+    },
+  },
+  'vendor-elder': npc(() => region().market.elder, { skin: SKIN_TONES[3], hair: HAIR_COLORS[4], hairStyle: 'bun', shirt: '#2e8a7e', pants: '#5c4033' }, { pitch: 1, rate: 0.82, kind: 'elder-female' }, 'elder'),
   clerk: npc(() => region().npc.clerk, { skin: SKIN_TONES[4], hair: HAIR_COLORS[0], hairStyle: 'spiky', shirt: '#e4572e', pants: '#2b2d42' }, { pitch: 1, rate: 1.05, kind: 'male' }),
 };

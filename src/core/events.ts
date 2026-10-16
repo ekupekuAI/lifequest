@@ -8,6 +8,8 @@ export interface BusEvents {
   /** kind = any fx texture key (heart, cloud, sparkle, coin, steam, smoke, bubble, check, music…) */
   fx: { kind: string; target?: string; x?: number; y?: number };
   scene: { goto: LocationId; spawn?: string };
+  /** a short report for whoever assigned the current task (sent to the parent's dashboard in family mode) */
+  report: { text: string; tone: 'good' | 'neutral' | 'bad'; toMemberId?: string };
 }
 
 type Handler<T> = (payload: T) => void;

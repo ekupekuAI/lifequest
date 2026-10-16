@@ -1,3 +1,4 @@
+import RewardsBoard from './RewardsBoard';
 import MemoryPanel from './MemoryPanel';
 import { useState } from 'react';
 import { store } from '../core/store';
@@ -14,7 +15,7 @@ import { ItemIcon } from './art';
 import { ShoppingChecklist } from './ShoppingList';
 import { currentObjectiveId, hoursPlaceName, openStatus, time12 } from './HUD';
 
-type Tab = 'mission' | 'bag' | 'money' | 'savings' | 'town' | 'skills' | 'family';
+type Tab = 'mission' | 'bag' | 'money' | 'savings' | 'town' | 'skills' | 'family' | 'rewards';
 const TABS: { id: Tab; label: string }[] = [
   { id: 'mission', label: 'Task' },
   { id: 'bag', label: 'Bag' },
@@ -23,6 +24,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'town', label: 'Town' },
   { id: 'skills', label: 'Skills' },
   { id: 'family', label: 'Family' },
+  { id: 'rewards', label: '🎁 Rewards' },
 ];
 let lastTab: Tab = 'mission';
 
@@ -616,6 +618,7 @@ export default function JournalPanel() {
         {tab === 'town' && <TownTab />}
         {tab === 'skills' && <SkillsTab />}
         {tab === 'family' && <MemoryPanel />}
+        {tab === 'rewards' && <RewardsBoard mode="child" />}
       </div>
     </Modal>
   );

@@ -68,6 +68,11 @@ const TOPICS: Record<string, { topic: string; lesson: string }> = {
   'date-pickup': { topic: 'the bus timetable pickup line', lesson: 'Laughing at your own cringe is a superpower.' },
   'date-sneak': { topic: 'you slipped out without saying where you were going', lesson: 'Telling your family where you are going is about safety, not just rules.' },
   'date-favour': { topic: 'you did the chores before going out', lesson: 'Family first, fun second — and you can usually have both.' },
+  // market-day (bargaining at the market cart)
+  'market-polite': { topic: 'you bargained so politely at the market cart', lesson: 'Firm and friendly gets the best price — and a vendor who remembers you.' },
+  'market-rude': { topic: 'you were rude to the vendor at the market', lesson: 'Vendors are people earning a living. You can bargain hard and still be kind.' },
+  'market-elder': { topic: 'you squeezed the elderly vendor for a few coins', lesson: 'A fair price is a kind price — a couple of coins mean more to her than to you.' },
+  'market-honest': { topic: 'you fibbed about prices at the market', lesson: 'Honest comparisons work; made-up ones cost you trust.' },
 };
 
 const keyOf = (m: Memory) => m.id.split('@')[0];
@@ -233,6 +238,21 @@ export function rememberResult(s: GameStore, result: MissionResult): void {
         add({ key: 'date-pickup', who: pid, kind: 'brave', text: 'The bus timetable line. Unforgettable. 😂', effect: { type: 'reminder', say: 'I still think about the bus timetable line. Every day. It haunts me 😂' } });
       if (f['favour'] === 'done')
         add({ key: 'date-favour', who: fav, kind: 'helpful', text: 'You did the chores before heading out to meet your friend. Thank you!' });
+      break;
+    }
+    case 'market-day': {
+      const vendor = typeof f['mk.vendor'] === 'string' && f['mk.vendor'] ? String(f['mk.vendor']) : 'the vendor';
+      const rude = Number(f['mk.rude'] ?? 0) > 0 || !!f['mk.joinedMob'];
+      const paid = Number(f['mk.paid'] ?? 0);
+      const list = Number(f['mk.list'] ?? 0);
+      if (rude)
+        add({ key: 'market-rude', who: boss, kind: 'careless', text: `${vendor} told me you were rude at the cart. Bargaining is fine — rudeness isn't.`, effect: { type: 'trust', delta: f['mk.apologised'] ? 0 : -1, say: f['mk.apologised'] ? `${vendor} said you came back and apologised yesterday. That's how grown-ups fix things.` : `${vendor} told me you were rude at the cart yesterday… Let's be firm but kind next time, okay?` } });
+      else if (Number(f['mk.deals'] ?? 0) > 0 && Number(f['mk.polite'] ?? 0) > 0 && paid < list && done)
+        add({ key: 'market-polite', who: boss, kind: 'thrifty', text: `You got the vegetables for ${formatMoney(paid)} instead of ${formatMoney(list)} — and so politely!`, effect: { type: 'trust', delta: 1, say: `I told the neighbours how nicely you bargained at the market — ${formatMoney(paid)} instead of ${formatMoney(list)}! ${vendor} says you're welcome any time.` } });
+      if (f['mk.squeezed'])
+        add({ key: 'market-elder', who: boss, kind: 'careless', text: `You haggled ${vendor} down by a couple of coins. She works hard for every sale.`, effect: { type: 'reminder', say: `I saw ${vendor} at the cart this morning, still there since dawn. A couple of coins mean more to her than to us — let's pay her fairly, okay?` } });
+      if (f['mk.citedFalse'])
+        add({ key: 'market-honest', who: boss, kind: 'careless', text: 'Telling the vendor FreshMart was cheaper when it wasn’t… honesty matters, even when bargaining.' });
       break;
     }
     case 'clinic-visit': {

@@ -1,3 +1,4 @@
+import { getMission } from '../missions/registry';
 // Game side of family multiplayer: starts a child's game from the shared family
 // profile and keeps the child's device in sync with the parents —
 // live status out; assignments & nudges in (all via src/services/family.ts).
@@ -5,12 +6,15 @@ import { store } from './store';
 import { sfx } from './sfx';
 import type { Assignment } from '../domain/types';
 import { region } from '../domain/region';
+import { calls, isVoice, voiceSeenAt } from './voiceMsg';
 import {
   currentSession,
   fetchAssignments,
   fetchFamilyProfile,
+  fetchMessages,
   loadMemberSave,
   pushStatus,
+  sendMessage,
   subscribeFamily,
   updateAssignment,
   type FamilyMessage,
@@ -91,7 +95,7 @@ function receiveAssignment(a: Assignment & { toGameMemberId: string }) {
   // on the child's device the child is always the game's 'player'
   store.state.assignments = [{ ...a, assignedTo: 'player' }, ...store.state.assignments];
   const from = store.member(a.assignedBy);
-  const title = store.availableMissions().find((m) => m.def.id === a.missionId)?.def.title ?? a.missionId;
+  const title = getMission(a.missionId)?.title ?? a.missionId;
   sfx.play('alert');
   store.toast(`📱 ${from?.name ?? 'Your parent'} assigned you: ${title}${a.budget ? ` · ${store.formatMoney(a.budget)}` : ''}. Talk to them to start!`, 'good');
   store.notify();
@@ -102,6 +106,11 @@ function receiveMessage(m: FamilyMessage) {
   const session = currentSession();
   if (!session || m.fromGameMemberId === session.gameMemberId) return;
   if (m.toGameMemberId && m.toGameMemberId !== session.gameMemberId) return;
+  // voice messages ring the in-game phone (src/ui/PhoneCall.tsx) instead of showing a text line
+  if (isVoice(m)) {
+    calls.incoming(m);
+    return;
+  }
   sfx.play('blip');
   const from = store.member(m.fromGameMemberId);
   if (!store.ui.dialogue && !store.ui.modal && store.ui.screen === 'game') {
@@ -147,15 +156,41 @@ export function startFamilySync(): void {
   document.addEventListener('visibilitychange', onVis);
   const unsubFamily = subscribeFamily({ onAssignment: receiveAssignment, onMessage: receiveMessage });
 
+  // reports for whoever gave the task: live events (e.g. a bargain) + a summary when a task ends
+  const unsubReport = store.bus.on('report', (r) => {
+    const to = r.toMemberId ?? store.state.run?.assignerId ?? null;
+    void sendMessage(to, `📋 ${r.text}`).catch(() => {});
+  });
+  let lastResultId = store.state.results[0]?.id ?? '';
+  const unsubResults = store.subscribe(() => {
+    const r = store.state.results[0];
+    if (!r || r.id === lastResultId) return;
+    lastResultId = r.id;
+    const asg = store.state.assignments.find((a) => a.resultId === r.id);
+    const outcome = r.outcome === 'completed' ? 'done ✅' : r.outcome === 'completed-late' ? 'done, a bit late ⏰' : 'not finished ❌';
+    const money = r.budget != null ? ` Spent ${store.formatMoney(r.moneySpent)} of ${store.formatMoney(r.budget)}.` : '';
+    void sendMessage(asg?.assignedBy ?? null, `📋 ${r.title}: ${outcome} · score ${r.overall}/100.${money} ${r.feedback[0] ?? ''}`.trim()).catch(() => {});
+  });
+
   // tasks assigned while this device was offline
   void fetchAssignments()
     .then((list) => list.forEach(receiveAssignment))
+    .catch(() => {});
+  // voice notes sent while this device was offline → phone inbox (new ones count as missed calls)
+  void fetchMessages(50)
+    .then((list) => {
+      const seen = voiceSeenAt(session.memberId);
+      const mine = list.filter((m) => isVoice(m) && m.fromGameMemberId !== session.gameMemberId && (!m.toGameMemberId || m.toGameMemberId === session.gameMemberId));
+      calls.backfill(mine, (m) => Date.parse(m.createdAt) > seen);
+    })
     .catch(() => {});
   push(true);
 
   stopSync = () => {
     unsubStore();
     unsubFamily();
+    unsubReport();
+    unsubResults();
     window.clearInterval(timer);
     document.removeEventListener('visibilitychange', onVis);
     void pushStatus(buildStatus(session, false)).catch(() => {});

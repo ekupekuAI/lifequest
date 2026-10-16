@@ -41,15 +41,16 @@ import {
   spend,
 } from './systems';
 import type { ChallengeDef, GameEvent, MissionDef } from '../missions/types';
-import { MISSIONS, getMission } from '../missions/registry';
+import { MISSIONS, customMissions, getMission } from '../missions/registry';
 import { CHALLENGES as BASE_CHALLENGES } from '../missions/challenges';
 import { HOME_CHALLENGES } from '../missions/homeChallenges';
 import { TOWN_CHALLENGES } from '../missions/townChallenges';
 import { SOCIAL_CHALLENGES } from '../missions/socialChallenges';
+import { MARKET_CHALLENGES } from '../missions/marketChallenges';
 import { dateTextWaiting, partnerHello, partnerPhone } from '../missions/dateNight';
 
 /** Every challenge the engine knows about (base library + home + town + social packs). */
-const CHALLENGES: Record<string, ChallengeDef> = { ...BASE_CHALLENGES, ...HOME_CHALLENGES, ...TOWN_CHALLENGES, ...SOCIAL_CHALLENGES };
+const CHALLENGES: Record<string, ChallengeDef> = { ...BASE_CHALLENGES, ...HOME_CHALLENGES, ...TOWN_CHALLENGES, ...SOCIAL_CHALLENGES, ...MARKET_CHALLENGES };
 import { EventBus } from './events';
 import { fmt } from '../missions/format';
 import { memoryChat, missionLock, onNewDay, rememberResult } from './memory';
@@ -87,6 +88,7 @@ export type Modal =
   | { type: 'help' }
   | { type: 'confirm'; text: string; yes: string; onYes: () => void }
   | { type: 'settings' }
+  | { type: 'phone' }
   | { type: 'day-summary'; day: number };
 
 export interface Toast {
@@ -620,7 +622,7 @@ export class GameStore {
 
   // ---------- missions ----------
   availableMissions() {
-    return MISSIONS.map((m) => {
+    return [...MISSIONS, ...customMissions()].map((m) => {
       const base = m.available ? m.available(this.state) : { ok: true };
       const lock = base.ok ? missionLock(this, m) : null;
       return { def: m, avail: lock ? { ok: false, reason: lock } : base };
