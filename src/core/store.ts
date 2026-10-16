@@ -70,6 +70,7 @@ export interface DialogueLine {
   portrait?: string;
   text: string;
   choices?: DialogueChoice[];
+  mood?: string;
 }
 
 export type Modal =

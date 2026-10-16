@@ -58,7 +58,9 @@ export default function DialoguePanel() {
     const prev = spokenRef.current;
     if (prev && prev.line === line && prev.at === ui.dialogueOpenedAt) return;
     spokenRef.current = { line, at: ui.dialogueOpenedAt };
-    voice.speak(line.text, line.portrait, { speaker: line.speaker || undefined });
+    voice.speak(line.text, line.portrait, { speaker: line.speaker || undefined, mood: line.mood });
+    // warm the realistic-voice cache for the line after this one
+    voice.prefetchLine(ui.dialogue?.[1]);
   }, [line, ui.dialogueOpenedAt]);
   useEffect(() => () => voice.stop(), []);
 
@@ -96,17 +98,25 @@ export default function DialoguePanel() {
   if (!line) return null;
   const narration = !line.speaker;
   const choices = line.choices ?? [];
-  const talking = voice.speaking && voice.speakingKey === speakerKey(line.portrait, line.speaker || undefined);
+  const lineKey = speakerKey(line.portrait, line.speaker || undefined);
+  const talking = voice.speaking && voice.speakingKey === lineKey;
+  const loadingVoice = !talking && voice.loadingKey === lineKey;
   const muted = voiceMode === 'off';
   const tools = (
     <div className="dlg-tools" onClick={(e) => e.stopPropagation()}>
+      {loadingVoice && (
+        <span className="vs-loading" role="status">
+          <span className="vs-loading-dot" aria-hidden />
+          loading voice…
+        </span>
+      )}
       {!muted && (
         <button
           type="button"
           className="dlg-tool"
           aria-label="Replay this line"
           title="Replay line"
-          onClick={() => voice.speak(line.text, line.portrait, { force: true, speaker: line.speaker || undefined })}
+          onClick={() => voice.speak(line.text, line.portrait, { force: true, speaker: line.speaker || undefined, mood: line.mood })}
         >
           🔊
         </button>

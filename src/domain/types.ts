@@ -23,7 +23,15 @@ export interface VoiceProfile {
 export interface Settings {
   region: RegionId;
   difficulty: Difficulty;
-  voice: { mode: 'speech' | 'babble' | 'off'; volume: number; narrator: boolean };
+  voice: {
+    mode: 'neural' | 'speech' | 'babble' | 'off';
+    volume: number;
+    narrator: boolean;
+    /** realistic voices: speakerKey → ElevenLabs voice id overrides */
+    cast?: Record<string, string>;
+    /** realistic voices: add a regional accent hint (default on) */
+    accentHints?: boolean;
+  };
   textScale: number; // 1, 1.15, 1.3
   colorSafe: boolean;
   hints: boolean; // show the objective arrow & hint button

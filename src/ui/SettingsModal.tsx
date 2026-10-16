@@ -1,6 +1,20 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { store } from '../core/store';
-import { voice, sampleLine, type VoiceMode } from '../core/voice';
+import { voice, sampleLine, defaultVoiceMode, type VoiceMode } from '../core/voice';
+import {
+  castTable,
+  checkNeuralHealth,
+  getNeuralVersion,
+  neuralAvailable,
+  neuralConfigured,
+  neuralStatus,
+  resetNeuralErrors,
+  setNeuralVolume,
+  subscribeNeural,
+  type CastRow,
+} from '../core/neuralVoice';
+import { voiceLabel } from '../core/voiceCast';
+import { VOICE_ID_RE, type Emotion } from '../core/ttsShared';
 import type { Difficulty, Settings } from '../domain/types';
 import { DEFAULT_SETTINGS } from '../domain/types';
 import { DIFFICULTY } from '../domain/world';
@@ -58,17 +72,29 @@ export function restorePrefs() {
   restored = true;
   try {
     const raw = localStorage.getItem(PREFS_KEY);
-    if (!raw) return;
+    if (!raw) {
+      // brand-new player: realistic voices when this build can use them
+      store.setSettings({ voice: { ...store.state.settings.voice, mode: defaultVoiceMode(), accentHints: true } });
+      return;
+    }
     const p = JSON.parse(raw) as Partial<Settings>;
     const patch: Partial<Settings> = {};
     if (p.region && p.region in REGIONS) patch.region = p.region;
     if (p.difficulty && p.difficulty in DIFFICULTY) patch.difficulty = p.difficulty;
     if (p.voice && typeof p.voice === 'object') {
-      const mode = (['speech', 'babble', 'off'] as const).includes(p.voice.mode as VoiceMode) ? p.voice.mode : DEFAULT_SETTINGS.voice.mode;
+      let mode = (['neural', 'speech', 'babble', 'off'] as const).includes(p.voice.mode as VoiceMode) ? p.voice.mode : defaultVoiceMode();
+      // prefs saved before realistic voices existed had 'speech' as the default: upgrade once
+      if (p.voice.accentHints === undefined && mode === 'speech') mode = defaultVoiceMode();
+      const cast: Record<string, string> = {};
+      if (p.voice.cast && typeof p.voice.cast === 'object') {
+        for (const [k, id] of Object.entries(p.voice.cast)) if (typeof id === 'string' && VOICE_ID_RE.test(id) && k.length <= 80) cast[k] = id;
+      }
       patch.voice = {
         mode,
         volume: typeof p.voice.volume === 'number' ? Math.max(0, Math.min(1, p.voice.volume)) : DEFAULT_SETTINGS.voice.volume,
         narrator: !!p.voice.narrator,
+        cast,
+        accentHints: p.voice.accentHints !== false,
       };
     }
     if (typeof p.textScale === 'number') patch.textScale = p.textScale;
@@ -90,12 +116,12 @@ export function useVoiceState() {
   return voice;
 }
 
-let lastOnMode: VoiceMode = 'speech';
+let lastOnMode: VoiceMode | null = null;
 /** Mute / unmute character voices, remembering the previous mode. */
 export function toggleVoiceMute() {
   const cur = store.state.settings.voice.mode;
   if (cur === 'off') {
-    updateSettings({ voice: { ...store.state.settings.voice, mode: lastOnMode } });
+    updateSettings({ voice: { ...store.state.settings.voice, mode: lastOnMode ?? defaultVoiceMode() } });
   } else {
     lastOnMode = cur;
     voice.stop();
@@ -121,6 +147,188 @@ export function testVoices() {
     },
     { key: 'npc:sharma', profile: shop.voice, text: sampleLine('shopkeeper', shop.name) },
   ]);
+}
+
+export const EMOTION_TEST: { line: string; emotions: Emotion[] } = {
+  line: 'We have to go to the market right now.',
+  emotions: ['cheerful', 'worried', 'angry'],
+};
+
+/** One family member says the same line cheerfully, worried, then cross (realistic voices). */
+export function testEmotions() {
+  const who = store.memberByRole('mother', 'guardian', 'father', 'grandparent');
+  voice.previewEmotions(who?.voice ?? DEFAULT_VOICES[who?.role ?? 'mother'], who?.id ?? 'mother-0', EMOTION_TEST.line, EMOTION_TEST.emotions);
+}
+
+function useNeuralState() {
+  useSyncExternalStore(subscribeNeural, getNeuralVersion, getNeuralVersion);
+  return neuralStatus();
+}
+
+const ROLE_HINT: Record<string, string> = {
+  mother: 'Mother',
+  father: 'Father',
+  'older-sibling': 'Older sibling',
+  'younger-sibling': 'Younger sibling',
+  grandparent: 'Grandparent',
+  guardian: 'Guardian',
+  npc: 'Townsfolk',
+  narrator: 'Story',
+};
+
+function CastEditorRow({ row, canPlay }: { row: CastRow; canPlay: boolean }) {
+  const [value, setValue] = useState(row.overrideId ?? '');
+  const [err, setErr] = useState('');
+  useEffect(() => setValue(row.overrideId ?? ''), [row.overrideId]);
+  const id = `cast-${row.key.replace(/[^a-z0-9-]/gi, '_')}`;
+  const commit = (raw: string) => {
+    const v = raw.trim();
+    if (v && !VOICE_ID_RE.test(v)) {
+      setErr('Voice IDs are 10–40 letters and numbers.');
+      return;
+    }
+    setErr('');
+    const cast = { ...(store.state.settings.voice.cast ?? {}) };
+    if (v) cast[row.key] = v;
+    else delete cast[row.key];
+    if ((cast[row.key] ?? '') === (row.overrideId ?? '')) return;
+    updateSettings({ voice: { ...store.state.settings.voice, cast } });
+  };
+  const sample = row.role === 'narrator' ? 'The sun rose over the busy little town.' : sampleLine(row.role === 'npc' ? 'npc' : row.role ?? '', row.label);
+  return (
+    <div className="vs-cast-row">
+      <label htmlFor={id} className="vs-cast-who">
+        <span>{row.label}</span>
+        <span className="vs-note">
+          {ROLE_HINT[row.role ?? ''] ?? ''} · default {voiceLabel(row.defaultId)}
+        </span>
+      </label>
+      <input
+        id={id}
+        type="text"
+        inputMode="text"
+        autoComplete="off"
+        spellCheck={false}
+        maxLength={40}
+        placeholder={row.defaultId}
+        value={value}
+        aria-invalid={!!err}
+        aria-describedby={err ? `${id}-err` : undefined}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={(e) => commit(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') commit((e.target as HTMLInputElement).value);
+        }}
+      />
+      <button
+        type="button"
+        className="btn btn-sm"
+        disabled={!canPlay}
+        aria-label={`Play a sample of ${row.label}`}
+        onClick={() => voice.previewMany([{ key: row.key, profile: row.profile, text: sample, voiceId: VOICE_ID_RE.test(value.trim()) ? value.trim() : undefined }])}
+      >
+        ▶
+      </button>
+      {err && (
+        <span id={`${id}-err`} className="vs-note vs-err" role="alert">
+          {err}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function NeuralPanel({ mode, accentHints }: { mode: VoiceMode; accentHints: boolean }) {
+  const status = useNeuralState();
+  const [health, setHealth] = useState<string | null>(null);
+  const checked = useRef(false);
+  useEffect(() => {
+    if (checked.current || !neuralConfigured()) return;
+    checked.current = true;
+    let live = true;
+    void checkNeuralHealth().then((h) => live && setHealth(h.message));
+    return () => {
+      live = false;
+    };
+  }, []);
+  const rows = castTable();
+  const usable = mode === 'neural' && neuralAvailable();
+  const tone = status.state === 'error' ? 'bad' : status.state === 'unconfigured' ? 'sky' : 'good';
+  const label = status.state === 'error' ? 'Error' : status.state === 'unconfigured' ? 'Not configured' : 'Available';
+  return (
+    <div className="vs-neural">
+      <div className="vs-row">
+        <span>
+          <span>Realistic AI voices (ElevenLabs)</span>
+          <span className="vs-note" style={{ display: 'block' }} role="status">
+            {status.state === 'error' || status.state === 'unconfigured' ? status.message : health ?? status.message}
+          </span>
+        </span>
+        <span className={`pill ${tone}`}>{label}</span>
+      </div>
+      {status.state === 'error' && (
+        <div className="vs-row">
+          <span className="vs-note">Built-in voices are used until you retry.</span>
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={() => {
+              resetNeuralErrors();
+              setHealth(null);
+              void checkNeuralHealth().then((h) => setHealth(h.message));
+            }}
+          >
+            ↻ Retry
+          </button>
+        </div>
+      )}
+      {mode === 'neural' && (
+        <div className="vs-row">
+          <span className="vs-note">One character says the same line: cheerful, worried, then cross.</span>
+          <button type="button" className="btn btn-sm" onClick={testEmotions} disabled={!usable}>
+            {voice.speaking ? '■ Playing…' : '▶ Test emotions'}
+          </button>
+        </div>
+      )}
+      {neuralConfigured() && (
+        <details className="vs-adv">
+          <summary>Advanced: custom voice IDs</summary>
+          <p className="vs-note">
+            Paste any ElevenLabs voice ID (for example a region-native voice from the ElevenLabs Voice Library) to recast a character. Leave empty to use the default.
+            ElevenLabs default voices only work on accounts created before March 2026 and expire on 31 Dec 2026.
+          </p>
+          <div className="vs-row">
+            <span>
+              <span>Regional accent hints</span>
+              <span className="vs-note" style={{ display: 'block' }}>
+                Ask the expressive model for a local accent (India, Nigeria, Japan, Brazil, Mexico).
+              </span>
+            </span>
+            <button
+              type="button"
+              className={`btn btn-sm vs-switch ${accentHints ? 'btn-good' : ''}`}
+              role="switch"
+              aria-checked={accentHints}
+              onClick={() => updateSettings({ voice: { ...store.state.settings.voice, accentHints: !accentHints } })}
+            >
+              {accentHints ? 'On' : 'Off'}
+            </button>
+          </div>
+          <div className="vs-cast">
+            {rows.map((row) => (
+              <CastEditorRow key={row.key} row={row} canPlay={usable} />
+            ))}
+          </div>
+          <div className="vs-row">
+            <span className="vs-note">Custom voices are saved on this device.</span>
+            <button type="button" className="btn btn-sm" onClick={() => updateSettings({ voice: { ...store.state.settings.voice, cast: {} } })}>
+              Reset all
+            </button>
+          </div>
+        </details>
+      )}
+    </div>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -192,7 +400,8 @@ export function RegionPicker({ value, onChange }: { value: RegionId; onChange: (
 }
 
 const MODES: { id: VoiceMode; title: string; sub: string }[] = [
-  { id: 'speech', title: 'Voices', sub: 'Spoken lines' },
+  { id: 'neural', title: 'Realistic', sub: 'AI voices' },
+  { id: 'speech', title: 'Voices', sub: 'Browser speech' },
   { id: 'babble', title: 'Babble', sub: 'Cute blips' },
   { id: 'off', title: 'Off', sub: 'Silent' },
 ];
@@ -213,6 +422,8 @@ export default function SettingsModal({ onClose, inGame }: { onClose?: () => voi
   const playing = inGame ?? ui.screen === 'game';
   const close = onClose ?? (() => store.openModal(null));
   const speechOk = voice.isSupported();
+  useNeuralState();
+  const neuralOk = neuralAvailable();
   const cloud = store.repo.kind === 'supabase';
   const r = REGIONS[s.region] ?? region();
 
@@ -228,6 +439,7 @@ export default function SettingsModal({ onClose, inGame }: { onClose?: () => voi
   useEffect(() => () => clearTimeout(volTimer.current), []);
   const onVolume = (v: number) => {
     setVol(v);
+    setNeuralVolume(v / 100);
     clearTimeout(volTimer.current);
     volTimer.current = window.setTimeout(() => setVoice({ volume: v / 100 }), 250);
   };
@@ -236,7 +448,7 @@ export default function SettingsModal({ onClose, inGame }: { onClose?: () => voi
     <Modal title="Settings" icon="⚙" size="md" onClose={close} className="vs-modal">
       <section className="vs-section" aria-labelledby="set-voice">
         <h3 id="set-voice">Voices</h3>
-        <div className="vs-seg" role="radiogroup" aria-label="Character voices">
+        <div className="vs-seg vs-seg-4" role="radiogroup" aria-label="Character voices">
           {MODES.map((m, i) => (
             <button
               key={m.id}
@@ -251,11 +463,17 @@ export default function SettingsModal({ onClose, inGame }: { onClose?: () => voi
               data-autofocus={i === 0 ? true : undefined}
             >
               <span className="vs-opt-title">{m.title}</span>
-              <span className="vs-opt-sub">{m.id === 'speech' && !speechOk ? 'Not available here' : m.sub}</span>
+              <span className="vs-opt-sub">
+                {m.id === 'speech' && !speechOk ? 'Not available here' : m.id === 'neural' && !neuralOk ? 'Not set up' : m.sub}
+              </span>
             </button>
           ))}
         </div>
         {s.voice.mode === 'speech' && !speechOk && <p className="vs-note">This browser has no speech voices, so babble is used instead.</p>}
+        {s.voice.mode === 'neural' && !neuralOk && (
+          <p className="vs-note">Realistic voices aren't available right now, so {speechOk ? 'browser speech' : 'babble'} is used instead.</p>
+        )}
+        <NeuralPanel mode={s.voice.mode} accentHints={s.voice.accentHints !== false} />
         <label className="vs-range">
           <span className="label" style={{ minWidth: 64 }}>
             Volume

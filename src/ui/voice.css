@@ -199,3 +199,30 @@
 :root[data-textscale] .vs-opt, :root[data-textscale] .vs-range output, :root[data-textscale] .vs-voice select { font-size: calc(18px * var(--text-scale, 1)); }
 :root[data-textscale] .vs-opt .vs-flag, :root[data-textscale] .vs-readonly .vs-flag { font-size: calc(22px * var(--text-scale, 1)); }
 :root[data-textscale] .dlg-tool { font-size: calc(14px * var(--text-scale, 1)); width: calc(28px * var(--text-scale, 1)); height: calc(28px * var(--text-scale, 1)); }
+
+/* ---------- realistic voices (ElevenLabs) ---------- */
+.vs-seg.vs-seg-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.vs-loading { display: inline-flex; align-items: center; gap: 5px; align-self: center; padding: 0 4px; font-size: 15px; color: var(--muted); white-space: nowrap; }
+.vs-loading-dot { display: inline-block; width: 6px; height: 6px; background: var(--gold); border: 1px solid var(--ink); animation: vs-pulse 0.9s ease-in-out infinite; }
+@keyframes vs-pulse { 0%, 100% { opacity: 0.25; transform: scale(0.8); } 50% { opacity: 1; transform: scale(1.15); } }
+.vs-neural { display: flex; flex-direction: column; gap: 6px; padding: 8px; background: var(--ink); border: 2px solid var(--panel-3); }
+.vs-adv > summary { cursor: pointer; font-size: 17px; color: var(--gold); padding: 4px 0; min-height: 32px; display: flex; align-items: center; }
+.vs-adv > summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.vs-adv[open] { display: flex; flex-direction: column; gap: 8px; }
+.vs-cast { display: flex; flex-direction: column; gap: 6px; max-height: 280px; overflow-y: auto; padding-right: 4px; }
+.vs-cast-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) auto; gap: 6px; align-items: center; }
+.vs-cast-who { display: flex; flex-direction: column; min-width: 0; }
+.vs-cast-who > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vs-cast-row input { width: 100%; min-width: 0; min-height: 32px; font-size: 16px; font-family: monospace; background: var(--panel-2); border: 2px solid var(--ink); box-shadow: inset 0 0 0 1px var(--frame); color: var(--text); padding: 2px 6px; }
+.vs-cast-row input::placeholder { color: var(--muted); opacity: 0.6; }
+.vs-cast-row input[aria-invalid='true'] { box-shadow: inset 0 0 0 2px var(--coral); }
+.vs-cast-row .vs-err { grid-column: 1 / -1; color: var(--coral); }
+@media (prefers-reduced-motion: reduce) { .vs-loading-dot { animation: none; } }
+@media (max-width: 560px) {
+  .vs-seg.vs-seg-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .vs-cast-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .vs-cast-row .vs-cast-who { grid-column: 1 / -1; }
+}
+:root[data-textscale] .vs-loading { font-size: calc(15px * var(--text-scale, 1)); }
+:root[data-textscale] .vs-adv > summary { font-size: calc(17px * var(--text-scale, 1)); }
+:root[data-textscale] .vs-cast-row input { font-size: calc(16px * var(--text-scale, 1)); }

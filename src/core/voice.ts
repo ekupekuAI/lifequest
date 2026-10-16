@@ -1,4 +1,6 @@
-// Character voices for dialogue. Three modes:
+// Character voices for dialogue. Four modes:
+//  - neural: realistic, emotional ElevenLabs voices through the Supabase `tts` Edge Function
+//            (falls back to speech, then babble, whenever a line can't play)
 //  - speech: the browser's Web Speech API (system voices), one stable voice per character
 //  - babble: Animal-Crossing-style syllable blips synthesised with WebAudio (works everywhere)
 //  - off:    silent
@@ -7,6 +9,16 @@ import { store } from './store';
 import { DEFAULT_VOICES, NPC_LOOKS } from '../domain/family';
 import { region } from '../domain/region';
 import type { Settings, VoiceProfile } from '../domain/types';
+import {
+  neuralAvailable,
+  neuralLine,
+  neuralLoadingKey,
+  prefetch as neuralPrefetch,
+  speakNeural,
+  stop as stopNeural,
+  subscribeNeural,
+} from './neuralVoice';
+import { inferEmotion, moodToEmotion, type Emotion } from './emotion';
 
 export type VoiceMode = Settings['voice']['mode'];
 
@@ -206,6 +218,25 @@ interface SpeakItem {
   text: string;
   profile: VoiceProfile;
   key: string;
+  /** explicit mood from the dialogue line */
+  mood?: string;
+  /** force an emotion (settings "Test emotions") */
+  emotion?: Emotion;
+  /** force an ElevenLabs voice (settings preview of a custom id) */
+  voiceId?: string;
+}
+
+/** Minimal shape of a dialogue line for speaking/prefetching. */
+export interface VoiceLine {
+  text: string;
+  portrait?: string;
+  speaker?: string;
+  mood?: string;
+}
+
+/** Emotion for a line: explicit mood wins, otherwise heuristics on the raw text. */
+export function emotionFor(text: string, key: string, mood?: string): Emotion {
+  return moodToEmotion(mood) ?? inferEmotion(text, key, { narration: key === 'narrator' });
 }
 
 type Listener = () => void;
@@ -242,8 +273,20 @@ class VoiceEngine {
     }
   }
 
+  private neuralHooked = false;
+  private hookNeural() {
+    if (this.neuralHooked) return;
+    this.neuralHooked = true;
+    try {
+      subscribeNeural(() => this.emit());
+    } catch {
+      /* ignore */
+    }
+  }
+
   // ----- subscription (for React) -----
   subscribe = (fn: Listener) => {
+    this.hookNeural();
     this.listeners.add(fn);
     return () => {
       this.listeners.delete(fn);
@@ -272,13 +315,18 @@ class VoiceEngine {
   isSupported(): boolean {
     return !!this.synth && typeof window !== 'undefined' && 'SpeechSynthesisUtterance' in window;
   }
-  /** Effective mode after falling back from speech → babble when speech isn't available. */
+  /** Effective mode after falling back neural → speech → babble when something isn't available. */
   mode(requested: VoiceMode = this.settings().mode): VoiceMode {
+    if (requested === 'neural' && !neuralAvailable()) requested = 'speech';
     if (requested === 'speech' && !this.isSupported()) return 'babble';
     return requested;
   }
   private settings(): Settings['voice'] {
-    return store.state?.settings?.voice ?? { mode: 'speech', volume: 0.9, narrator: false };
+    return store.state?.settings?.voice ?? { mode: defaultVoiceMode(), volume: 0.9, narrator: false };
+  }
+  /** Speaker key whose realistic-voice line is being fetched right now. */
+  get loadingKey(): string | null {
+    return neuralLoadingKey();
   }
 
   /** System voices worth offering (novelty voices removed), sorted by language then name. */
@@ -354,13 +402,33 @@ class VoiceEngine {
    * `portraitKey`: member id, `npc:<key>`, or undefined for narration.
    * `opts.force` speaks narration even when the narrator setting is off (used by "replay").
    */
-  speak(text: string, portraitKey?: string, opts: { force?: boolean; speaker?: string } = {}) {
+  speak(text: string, portraitKey?: string, opts: { force?: boolean; speaker?: string; mood?: string } = {}) {
     this.stop();
     const mode = this.mode();
     if (mode === 'off') return;
     const profile = this.profileFor(portraitKey, opts.force, opts.speaker);
     if (!profile) return;
-    this.play([{ text, profile, key: speakerKey(portraitKey, opts.speaker) }], mode);
+    this.play([{ text, profile, key: speakerKey(portraitKey, opts.speaker), mood: opts.mood }], mode);
+  }
+
+  /** Warm the realistic-voice cache for an upcoming dialogue line (no-op in other modes). */
+  prefetchLine(line: VoiceLine | null | undefined) {
+    try {
+      if (!line || this.mode() !== 'neural') return;
+      const profile = this.profileFor(line.portrait, false, line.speaker || undefined);
+      if (!profile) return;
+      const text = normalizeForSpeech(line.text);
+      if (!text) return;
+      const key = speakerKey(line.portrait, line.speaker || undefined);
+      neuralPrefetch([neuralLine(text, profile, emotionFor(line.text, key, line.mood), key)]);
+    } catch {
+      /* best effort */
+    }
+  }
+
+  /** One character says the same line in several emotions (settings "Test emotions"). */
+  previewEmotions(profile: VoiceProfile, key: string, text: string, emotions: Emotion[], voiceId?: string) {
+    this.previewMany(emotions.map((emotion) => ({ text, profile, key, emotion, voiceId })));
   }
 
   /** Play a sample in a given voice (setup screens). Audible even when voices are switched off. */
@@ -393,15 +461,73 @@ class VoiceEngine {
     }
     this.live = [];
     this.stopBabble();
+    stopNeural();
     this.setSpeaking(false);
   }
 
   // ----- internals -----
   private play(items: SpeakItem[], mode: VoiceMode) {
+    if (mode === 'off') return;
+    if (mode === 'neural') {
+      void this.playNeural(items);
+      return;
+    }
     const clean = items.map((i) => ({ ...i, text: normalizeForSpeech(i.text) })).filter((i) => i.text);
-    if (!clean.length || mode === 'off') return;
+    if (!clean.length) return;
     if (mode === 'speech' && this.isSupported()) this.playSpeech(clean);
     else this.playBabble(clean);
+  }
+
+  /** Realistic voices, item by item; whatever can't play falls back to speech, then babble. */
+  private async playNeural(items: SpeakItem[]) {
+    const token = this.token;
+    const fallback: VoiceMode = this.isSupported() ? 'speech' : 'babble';
+    if (items.length > 1) {
+      // warm the cache for the following samples so they play back to back
+      try {
+        neuralPrefetch(
+          items.slice(1, 4).flatMap((it) => {
+            const text = normalizeForSpeech(it.text);
+            return text ? [neuralLine(text, it.profile, it.emotion ?? emotionFor(it.text, it.key, it.mood), it.key, it.voiceId)] : [];
+          }),
+        );
+      } catch {
+        /* best effort */
+      }
+    }
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      const text = normalizeForSpeech(it.text);
+      if (!text) continue;
+      const emotion = it.emotion ?? emotionFor(it.text, it.key, it.mood);
+      let endResolve: () => void = () => {};
+      const ended = new Promise<void>((res) => {
+        endResolve = res;
+      });
+      let ok = false;
+      try {
+        ok = await speakNeural(text, it.profile, emotion, it.key, {
+          voiceId: it.voiceId,
+          volume: clamp(this.settings().volume, 0, 1),
+          onStart: () => {
+            if (token === this.token) this.setSpeaking(true, it.key);
+          },
+          onEnd: () => endResolve(),
+        });
+      } catch {
+        ok = false;
+      }
+      if (token !== this.token) return;
+      if (!ok) {
+        this.play(items.slice(i), fallback);
+        return;
+      }
+      await ended;
+      if (token !== this.token) return;
+      if (i < items.length - 1) await new Promise((r) => setTimeout(r, 300)); // a breath between samples
+      if (token !== this.token) return;
+    }
+    this.setSpeaking(false);
   }
 
   private playSpeech(items: SpeakItem[]) {
@@ -612,6 +738,15 @@ class VoiceEngine {
     this.setSpeaking(true, items[0].key);
     for (const m of marks.slice(1)) this.timers.push(window.setTimeout(() => token === this.token && this.setSpeaking(true, m.key), toMs(m.at)));
     this.timers.push(window.setTimeout(() => token === this.token && this.setSpeaking(false), toMs(t - 0.3)));
+  }
+}
+
+/** Mode for a brand-new player: realistic voices when this build can use them. */
+export function defaultVoiceMode(): VoiceMode {
+  try {
+    return neuralAvailable() ? 'neural' : 'speech';
+  } catch {
+    return 'speech';
   }
 }
 
