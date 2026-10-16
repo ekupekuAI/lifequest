@@ -1,0 +1,73 @@
+/* 3D diorama overlay (sits over the Phaser canvas inside .game-canvas) */
+.w3d {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  overflow: hidden;
+}
+.w3d > canvas.w3d-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  image-rendering: pixelated;
+}
+.w3d-vignette {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 900ms ease;
+  background:
+    radial-gradient(ellipse 85% 75% at 50% 52%, transparent 55%, rgba(8, 6, 20, 0.42) 100%),
+    linear-gradient(to bottom, rgba(255, 210, 160, 0.06), transparent 30%, transparent 75%, rgba(10, 8, 30, 0.18));
+}
+.w3d-on .w3d-vignette { opacity: 1; }
+.w3d-fade {
+  position: absolute;
+  inset: 0;
+  background: #000;
+  opacity: 0;
+}
+.w3d-badge {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.55rem;
+  letter-spacing: 0.08em;
+  color: #1b1f3b;
+  background: #f2a541;
+  border: 2px solid #1b1325;
+  box-shadow: 0 2px 0 #1b1325;
+  padding: 5px 6px 4px;
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity 400ms ease, transform 400ms ease;
+}
+.w3d-on .w3d-badge { opacity: 0.85; transform: none; }
+.w3d-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 18%;
+  max-width: calc(100% - 32px);
+  transform: translate(-50%, 8px);
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.55rem;
+  line-height: 1.6;
+  text-align: center;
+  color: #fff6e6;
+  background: rgba(20, 17, 42, 0.82);
+  border: 2px solid #f2a541;
+  padding: 8px 12px;
+  opacity: 0;
+  transition: opacity 350ms ease, transform 350ms ease;
+}
+.w3d-hint.show { opacity: 1; transform: translate(-50%, 0); }
+
+@media (prefers-reduced-motion: reduce) {
+  .w3d-vignette, .w3d-badge, .w3d-hint { transition: opacity 200ms linear; transform: none; }
+  .w3d-hint { transform: translateX(-50%); }
+  .w3d-hint.show { transform: translateX(-50%); }
+}

@@ -25,6 +25,8 @@ No configuration is needed. Without Supabase credentials the game runs in **loca
 | Journal (list, bag, money, skills) | J | 📓 |
 | Call home for help (costs 2 game minutes) | P | 📞 |
 | Pause / close panels | Esc | ⏸ |
+| Hint: what to do next | H | 💡 |
+| Switch 2D ↔ 3D view | V | 3D button |
 
 ## What's playable
 
@@ -77,6 +79,15 @@ No configuration is needed. Without Supabase credentials the game runs in **loca
   - Return the Library Book: ticket machine vs paying the driver, Bus 12 vs Bus 7, the city centre and the library.
   - Evening Errands: plan your route around closing times.
 - **Accessibility:** text size up to 130%, a colour-safe palette, a reduced-motion mode, and the guide arrow can be turned off.
+
+## v3: 3D mode, music, and a world that remembers
+
+- **3D diorama mode:** press **V** (or the 3D button) and the camera tilts while walls, furniture and buildings grow up out of the floor. It's the same game, missions and save, in a pixel-art 3D miniature with lighting, shadows, day/night and rain. Press V again to go back to 2D. It's built with Three.js and mirrors the 2D world live (`src/game/three/`).
+- **Generative music and ambience:** a synthesised soundtrack that follows the time of day, the place you're in, queues and deadlines, plus birds, traffic, rain, shop hum and crickets at night. No audio files are needed. Volumes are in Settings.
+- **Family memory:**
+  - Choices carry over to the next day: the family brings up kind moments, forgotten milk, overspending or honesty.
+  - Pocket money and trust change as a result.
+  - Bigger responsibilities unlock as trust grows.
 
 ## Project structure
 

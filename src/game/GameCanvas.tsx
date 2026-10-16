@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import Phaser from 'phaser';
 import { BootScene } from './scenes/BootScene';
+import { setGame } from './runtime';
 import { HomeScene } from './scenes/HomeScene';
 import { TownScene } from './scenes/TownScene';
 import { StoreScene } from './scenes/StoreScene';
@@ -29,7 +30,9 @@ export default function GameCanvas() {
       banner: false,
     });
     (window as any).__phaser = game.current;
+    setGame(game.current);
     return () => {
+      setGame(null);
       game.current?.destroy(true);
       game.current = null;
     };

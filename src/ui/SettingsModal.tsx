@@ -21,6 +21,7 @@ import { DIFFICULTY } from '../domain/world';
 import { REGIONS, region, setRegion, type RegionId } from '../domain/region';
 import { DEFAULT_VOICES, NPC_LOOKS, regionName } from '../domain/family';
 import { useSnap } from './hooks';
+import { audioDirector, musicSettings, moodLabel } from '../core/audioDirector';
 import { Modal } from './Modal';
 import './voice.css';
 
@@ -100,6 +101,7 @@ export function restorePrefs() {
     if (typeof p.textScale === 'number') patch.textScale = p.textScale;
     if (typeof p.colorSafe === 'boolean') patch.colorSafe = p.colorSafe;
     if (typeof p.hints === 'boolean') patch.hints = p.hints;
+    if (p.music && typeof p.music === 'object') patch.music = musicSettings(p);
     store.setSettings(patch);
     if (patch.region) setRegion(patch.region);
   } catch {
@@ -334,6 +336,100 @@ function NeuralPanel({ mode, accentHints }: { mode: VoiceMode; accentHints: bool
 // ---------------------------------------------------------------------------
 // small controls
 
+/** Music & ambience: on/off, two volume sliders (debounced saves) and a mood preview. */
+function MusicSection() {
+  const { state } = useSnap();
+  const m = musicSettings(state.settings);
+  useSyncExternalStore(audioDirector.subscribePreview, () => audioDirector.previewing, () => null);
+  const previewing = audioDirector.previewing;
+  const [vol, setVol] = useState(Math.round(m.volume * 100));
+  const [amb, setAmb] = useState(Math.round(m.ambience * 100));
+  const timer = useRef(0);
+  useEffect(() => setVol(Math.round(m.volume * 100)), [m.volume]);
+  useEffect(() => setAmb(Math.round(m.ambience * 100)), [m.ambience]);
+  useEffect(
+    () => () => {
+      clearTimeout(timer.current);
+      audioDirector.stopPreview();
+    },
+    [],
+  );
+  const save = (patch: Partial<typeof m>) => updateSettings({ music: { ...musicSettings(store.state.settings), ...patch } });
+  const pending = useRef<Partial<typeof m>>({});
+  const later = (patch: Partial<typeof m>) => {
+    pending.current = { ...pending.current, ...patch };
+    clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => {
+      const p = pending.current;
+      pending.current = {};
+      save(p);
+    }, 250);
+  };
+  return (
+    <section className="vs-section" aria-labelledby="set-music">
+      <h3 id="set-music">Music &amp; ambience</h3>
+      <Switch
+        id="set-music-on"
+        label="Background music & sounds"
+        hint="Calm tunes that follow the place and time of day, plus birds, traffic, rain and shop sounds."
+        on={m.enabled}
+        onChange={(v) => {
+          audioDirector.unlock();
+          save({ enabled: v });
+        }}
+      />
+      <label className="vs-range">
+        <span className="label" style={{ minWidth: 64 }}>
+          Music
+        </span>
+        <input
+          type="range"
+          min={0}
+          max={100}
+          step={5}
+          value={vol}
+          onChange={(e) => {
+            const v = Number(e.target.value);
+            setVol(v);
+            later({ volume: v / 100 });
+          }}
+          aria-label="Music volume"
+          disabled={!m.enabled}
+        />
+        <output>{vol}%</output>
+      </label>
+      <label className="vs-range">
+        <span className="label" style={{ minWidth: 64 }}>
+          Sounds
+        </span>
+        <input
+          type="range"
+          min={0}
+          max={100}
+          step={5}
+          value={amb}
+          onChange={(e) => {
+            const v = Number(e.target.value);
+            setAmb(v);
+            later({ ambience: v / 100 });
+          }}
+          aria-label="Ambience volume"
+          disabled={!m.enabled}
+        />
+        <output>{amb}%</output>
+      </label>
+      <div className="vs-row">
+        <span className="vs-note" aria-live="polite">
+          {previewing ? `Playing: ${moodLabel(previewing)}` : 'Hear each tune for a few seconds.'}
+        </span>
+        <button type="button" className="btn btn-sm" onClick={() => (previewing ? audioDirector.stopPreview() : audioDirector.startPreview())}>
+          {previewing ? '■ Stop' : '▶ Preview'}
+        </button>
+      </div>
+    </section>
+  );
+}
+
 function Switch({ label, on, onChange, hint, id }: { label: string; on: boolean; onChange: (v: boolean) => void; hint?: string; id: string }) {
   return (
     <div className="vs-row">
@@ -499,6 +595,8 @@ export default function SettingsModal({ onClose, inGame }: { onClose?: () => voi
         </div>
         <Switch id="set-sfx" label="Sound effects" on={ui.sound} onChange={(v) => store.setUI({ sound: v })} />
       </section>
+
+      <MusicSection />
 
       <section className="vs-section" aria-labelledby="set-diff">
         <h3 id="set-diff">Difficulty</h3>

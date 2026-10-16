@@ -236,6 +236,15 @@ function StatusColumn() {
             💡<span className="lbl">H</span>
           </button>
         )}
+        <button
+          className={`btn view-toggle ${ui.view3d ? 'on' : ''}`}
+          onClick={(e) => { e.currentTarget.blur(); store.toggleView3d(); }}
+          title={ui.view3d ? 'Back to 2D view (V)' : 'Switch to 3D view (V)'}
+          aria-label={ui.view3d ? 'Switch to 2D view' : 'Switch to 3D view'}
+          aria-pressed={ui.view3d}
+        >
+          {ui.view3d ? '2D' : '3D'}<span className="lbl">V</span>
+        </button>
         <button className="btn" onClick={(e) => { e.currentTarget.blur(); store.openModal({ type: 'journal' }); }} title="Journal (J)" aria-label="Journal">
           📓<span className="lbl">J</span>
         </button>

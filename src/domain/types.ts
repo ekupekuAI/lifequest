@@ -35,6 +35,10 @@ export interface Settings {
   textScale: number; // 1, 1.15, 1.3
   colorSafe: boolean;
   hints: boolean; // show the objective arrow & hint button
+  /** background music & ambient sound (0..1 volumes) */
+  music?: { enabled: boolean; volume: number; ambience: number };
+  /** remember the 3D view preference */
+  view3d?: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -297,4 +301,18 @@ export interface GameState {
   savings: { balance: number; goal: string; target: number };
   /** end-of-day reflections written by the player */
   reflections: { day: number; wentWell: string; improve: string; mood: string }[];
+  /** things the family remembers about the player's choices (see core/memory.ts) */
+  memories?: Memory[];
+}
+
+export interface Memory {
+  id: string;
+  day: number;
+  /** member id this memory belongs to, or 'family' */
+  who: string;
+  kind: 'kind' | 'responsible' | 'careless' | 'honest' | 'late' | 'thrifty' | 'wasteful' | 'helpful' | 'forgetful' | 'brave';
+  text: string;
+  /** effect to apply on a later day, consumed by memory.ts */
+  effect?: { type: string; [k: string]: unknown };
+  used?: boolean;
 }

@@ -651,3 +651,8 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 18px; }
   .guide-line span { animation: none; }
   .mood[aria-checked='true'] { transform: none; }
 }
+
+/* 3D view toggle */
+.view-toggle { font-family: 'Press Start 2P', monospace; font-size: 0.6rem; }
+.view-toggle.on { background: var(--accent, #f2a541); color: #1b1f3b; }
+.view-toggle-touch { position: absolute; left: 12px; top: 50%; z-index: 30; font-family: 'Press Start 2P', monospace; font-size: 0.65rem; padding: 10px 12px; }

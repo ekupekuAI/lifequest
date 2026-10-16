@@ -50,6 +50,7 @@ import { TOWN_CHALLENGES } from '../missions/townChallenges';
 const CHALLENGES: Record<string, ChallengeDef> = { ...BASE_CHALLENGES, ...HOME_CHALLENGES, ...TOWN_CHALLENGES };
 import { EventBus } from './events';
 import { fmt } from '../missions/format';
+import { memoryChat, missionLock, onNewDay, rememberResult } from './memory';
 import { sfx } from './sfx';
 import type { GameRepository } from '../services/repository';
 import { createRepository } from '../services/repository';
@@ -107,6 +108,8 @@ export interface UIState {
   waiting: boolean;
   prompt: string | null;
   sound: boolean;
+  /** 3D diorama view on/off (the 2D Phaser world keeps running underneath) */
+  view3d: boolean;
   feedback: { text: string; tone: 'good' | 'neutral' | 'bad' } | null;
 }
 
@@ -184,6 +187,7 @@ export class GameStore {
       waiting: false,
       prompt: null,
       sound: true,
+      view3d: false,
       feedback: null,
     };
     this.snapshot = { rev: 0, state: this.state, ui: this.ui };
@@ -276,6 +280,12 @@ export class GameStore {
   goToScreen(screen: Screen) {
     this.ui = { ...this.ui, screen, modal: null, dialogue: null, waiting: false, prompt: null };
     this.notify();
+  }
+
+  // ---------- view ----------
+  toggleView3d(on = !this.ui.view3d) {
+    this.setUI({ view3d: on });
+    if (this.state.settings) this.state.settings.view3d = on;
   }
 
   // ---------- settings ----------
@@ -608,7 +618,11 @@ export class GameStore {
 
   // ---------- missions ----------
   availableMissions() {
-    return MISSIONS.map((m) => ({ def: m, avail: m.available ? m.available(this.state) : { ok: true } }));
+    return MISSIONS.map((m) => {
+      const base = m.available ? m.available(this.state) : { ok: true };
+      const lock = base.ok ? missionLock(this, m) : null;
+      return { def: m, avail: lock ? { ok: false, reason: lock } : base };
+    });
   }
 
   defaultAssigner(def: MissionDef): FamilyMember | undefined {
@@ -749,6 +763,11 @@ export class GameStore {
       }
     }
     this.state.results = [result, ...this.state.results].slice(0, 30);
+    try {
+      rememberResult(this, result);
+    } catch (e) {
+      console.warn('memory', e);
+    }
     this.state.run = null;
     this.state.hands = [];
     delete this.state.world['carryingByHand'];
@@ -935,6 +954,8 @@ export class GameStore {
       grandparent: [words('When I was young, we walked everywhere. Patience is a skill, {endearment}.'), 'Come sit with me when you are free.'],
       guardian: ['Thanks for being responsible today.', 'Let me know if you need anything.'],
     };
+    const remembered = memoryChat(this, m);
+    if (remembered) return remembered;
     const opts = lines[m.role] ?? ['Hello!'];
     const act = scheduleFor(m.role, this.state.clock.minutes).activity;
     const line = opts[Math.floor(this.state.clock.minutes / 7) % opts.length];
@@ -1035,6 +1056,11 @@ export class GameStore {
     const allowance = money(ALLOWANCE_BASE);
     this.give(allowance, 'Daily pocket money');
     this.toast(`Day ${this.state.clock.day}! You got ${formatMoney(allowance)} pocket money.`, 'good');
+    try {
+      onNewDay(this);
+    } catch (e) {
+      console.warn('memory', e);
+    }
     this.notify();
     this.save();
   }

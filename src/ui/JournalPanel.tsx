@@ -1,3 +1,4 @@
+import MemoryPanel from './MemoryPanel';
 import { useState } from 'react';
 import { store } from '../core/store';
 import { formatClock, formatDuration, inventoryWeight } from '../core/systems';
@@ -13,7 +14,7 @@ import { ItemIcon } from './art';
 import { ShoppingChecklist } from './ShoppingList';
 import { currentObjectiveId, hoursPlaceName, openStatus, time12 } from './HUD';
 
-type Tab = 'mission' | 'bag' | 'money' | 'savings' | 'town' | 'skills';
+type Tab = 'mission' | 'bag' | 'money' | 'savings' | 'town' | 'skills' | 'family';
 const TABS: { id: Tab; label: string }[] = [
   { id: 'mission', label: 'Task' },
   { id: 'bag', label: 'Bag' },
@@ -21,6 +22,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'savings', label: 'Savings' },
   { id: 'town', label: 'Town' },
   { id: 'skills', label: 'Skills' },
+  { id: 'family', label: 'Family' },
 ];
 let lastTab: Tab = 'mission';
 
@@ -613,6 +615,7 @@ export default function JournalPanel() {
         {tab === 'savings' && <SavingsTab />}
         {tab === 'town' && <TownTab />}
         {tab === 'skills' && <SkillsTab />}
+        {tab === 'family' && <MemoryPanel />}
       </div>
     </Modal>
   );

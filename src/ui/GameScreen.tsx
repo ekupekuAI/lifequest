@@ -1,6 +1,7 @@
 import { Component, Suspense, lazy, useEffect, type ReactNode } from 'react';
 // Phaser is big: load the world on demand so the title screen appears instantly.
 const GameCanvas = lazy(() => import('../game/GameCanvas'));
+const World3D = lazy(() => import('../game/three/World3D'));
 
 class CanvasBoundary extends Component<{ children: ReactNode }, { error: string | null }> {
   state = { error: null as string | null };
@@ -124,6 +125,8 @@ export default function GameScreen() {
         store.callHome();
       } else if (k === 'h' && !u.dialogue && !u.modal && store.state.settings?.hints !== false) {
         store.hint();
+      } else if (k === 'v' && !u.dialogue && !u.modal) {
+        store.toggleView3d();
       }
     };
     window.addEventListener('keydown', onKey);
@@ -158,11 +161,21 @@ export default function GameScreen() {
           <GameCanvas />
         </Suspense>
         </CanvasBoundary>
+        <CanvasBoundary>
+          <Suspense fallback={null}>
+            <World3D />
+          </Suspense>
+        </CanvasBoundary>
       </div>
       <div className="layer">
         <HUD touch={touch} />
         <QueuePanel />
         {touch && <TouchControls />}
+        {touch && (
+          <button className="btn view-toggle-touch" onClick={() => store.toggleView3d()} aria-label={ui.view3d ? 'Switch to 2D view' : 'Switch to 3D view'}>
+            {ui.view3d ? '2D' : '3D'}
+          </button>
+        )}
         <DialoguePanel />
         <FeedbackBanner />
         <Toasts />

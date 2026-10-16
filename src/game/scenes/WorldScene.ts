@@ -6,6 +6,7 @@ import type { GameState, LocationId } from '../../domain/types';
 import { touchInput } from '../input';
 import { TILE_INDEX, type TileName } from '../art/tiles';
 import { sfx } from '../../core/sfx';
+import type { WorldView3D } from '../runtime';
 
 export const T = 16;
 export const SCENE_FOR: Record<LocationId, string> = { home: 'Home', town: 'Town', grocery: 'Store', clinic: 'Clinic', city: 'City', library: 'Library' };
@@ -122,6 +123,9 @@ export abstract class WorldScene extends Phaser.Scene {
   protected mapW = 0;
   protected mapH = 0;
   protected guide!: Phaser.GameObjects.Graphics;
+  protected guidePoint: { x: number; y: number } | null = null;
+  protected wallIdx: number[] = [];
+  protected solidIdx: number[] = [];
   protected doorBlockedAt = 0;
 
   abstract buildConfig(): WorldConfig;
@@ -202,6 +206,8 @@ export abstract class WorldScene extends Phaser.Scene {
     this.layer.setDepth(-1000);
     const solid = [wallTop, wallFace, TILE_INDEX.void, ...(this.cfg.solidTiles ?? []).map((n) => TILE_INDEX[n])];
     this.layer.setCollision(solid);
+    this.wallIdx = [wallTop, wallFace];
+    this.solidIdx = solid.filter((i) => i !== wallTop && i !== wallFace && i !== TILE_INDEX.void);
     this.physics.world.setBounds(0, 0, this.mapW, this.mapH);
   }
 
@@ -372,6 +378,9 @@ export abstract class WorldScene extends Phaser.Scene {
     this.updateFocus();
     this.checkDoors(moving);
     this.drawGuide();
+    // while the 3D diorama fully covers the game, skip drawing 2D (logic keeps running)
+    const coveredBy3d = this.game.canvas.style.opacity === '0';
+    if (this.cameras.main.visible === coveredBy3d) this.cameras.main.setVisible(!coveredBy3d);
     this.syncTimer += delta;
     if (this.syncTimer > 150) {
       this.syncTimer = 0;
@@ -392,6 +401,7 @@ export abstract class WorldScene extends Phaser.Scene {
     const g = this.guide;
     if (!g) return;
     g.clear();
+    this.guidePoint = null;
     const t = store.currentTarget();
     if (!t || store.blocking) return;
     let pt: { x: number; y: number } | null = null;
@@ -400,6 +410,7 @@ export abstract class WorldScene extends Phaser.Scene {
       if (it) pt = { x: it.x, y: it.y - 4 };
     } else if (t.via) pt = this.doorTo(t.via) ?? this.extraRoute(t.via);
     if (!pt) return;
+    this.guidePoint = pt;
     const cam = this.cameras.main;
     const view = cam.worldView;
     const bob = Math.sin(this.time.now / 180) * 2;
@@ -434,6 +445,35 @@ export abstract class WorldScene extends Phaser.Scene {
   /** Scenes can expose non-door routes (e.g. the bus stop) for the guide arrow. */
   protected extraRoute(_to: LocationId): { x: number; y: number } | null {
     return null;
+  }
+
+  /** Read-only description of this scene for the 3D diorama renderer. */
+  view3d(): WorldView3D | null {
+    if (!this.player || !this.layer || !this.sys.isActive()) return null;
+    const tiles: number[][] = [];
+    for (let y = 0; y < this.layer.layer.height; y++) {
+      const row: number[] = [];
+      for (let x = 0; x < this.layer.layer.width; x++) row.push(this.layer.layer.data[y][x]?.index ?? 0);
+      tiles.push(row);
+    }
+    const tinted = this.night?.active && this.night.visible;
+    return {
+      key: this.scene.key,
+      location: this.cfg.location,
+      outdoor: !!this.cfg.outdoor,
+      mapW: this.mapW,
+      mapH: this.mapH,
+      tile: T,
+      tiles,
+      wallTiles: this.wallIdx,
+      solidTiles: this.solidIdx,
+      scene: this,
+      player: this.player,
+      facing: this.facing,
+      lightTint: tinted ? this.night.fillColor : null,
+      ignore: new Set<Phaser.GameObjects.GameObject>([this.night, this.guide, this.prompt, this.layer].filter(Boolean) as Phaser.GameObjects.GameObject[]),
+      guide: this.guidePoint,
+    };
   }
 
   /** scene-specific per-frame hook */
