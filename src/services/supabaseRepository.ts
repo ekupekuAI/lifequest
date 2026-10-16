@@ -8,11 +8,15 @@
 //   Anonymous), otherwise every cloud save reports a clear error.
 // - Everything written here (scores, XP, money) is client-computed and NOT
 //   authoritative; see supabase/migrations/0001_lifequest_init.sql.
+// - Family multiplayer: when this device has joined a family (services/family
+//   currentSession()), saves go to that member's own row in member_saves
+//   instead of the single-account family snapshot (still local-first).
 import type { SupabaseClient, User } from '@supabase/supabase-js';
 import type { Assignment, FamilyMember, GameState, MissionStatus } from '../domain/types';
 import type { GameRepository, SaveResult } from './repository';
 import type { LocalRepository } from './localRepository';
 import { getSupabase } from './supabaseClient';
+import { currentSession, loadMemberSave, saveMemberSave } from './family';
 
 const FAMILY_KEY = 'lifequest.familyId';
 /** Set while local is newer than the cloud (a cloud sync failed or is running). */
@@ -172,6 +176,7 @@ export class SupabaseRepository implements GameRepository {
 
   async load(): Promise<GameState | null> {
     const sb = getSupabase();
+    if (sb && currentSession()) return this.loadMember();
     const familyId = getKey(FAMILY_KEY);
     if (!sb || !familyId) return this.local.load();
     // Local is newer than the cloud (last sync failed): don't roll back progress.
@@ -197,7 +202,8 @@ export class SupabaseRepository implements GameRepository {
     const sb = getSupabase();
     if (!sb) return localRes;
 
-    const next = this.chain.then(() => this.syncCloud(sb, state));
+    const sync = currentSession() ? () => this.syncMember(state) : () => this.syncCloud(sb, state);
+    const next = this.chain.then(sync);
     this.chain = next.catch(() => undefined);
     let cloud: SaveResult;
     try {
@@ -213,6 +219,30 @@ export class SupabaseRepository implements GameRepository {
     this.local.clear();
     setKey(FAMILY_KEY, null);
     setKey(PENDING_KEY, null);
+  }
+
+  // ---------- family multiplayer: per-member saves ----------
+
+  private async loadMember(): Promise<GameState | null> {
+    // Local is newer than the cloud (last sync failed): don't roll back progress.
+    if (getKey(PENDING_KEY) && this.local.hasSave()) return this.local.load();
+    try {
+      return (await loadMemberSave()) ?? (await this.local.load());
+    } catch (e) {
+      console.warn('[LifeQuest] Cloud load failed, using local save.', e);
+      return this.local.load();
+    }
+  }
+
+  private async syncMember(state: GameState): Promise<SaveResult> {
+    setKey(PENDING_KEY, '1');
+    try {
+      await saveMemberSave(state);
+      setKey(PENDING_KEY, null);
+      return { ok: true, where: 'cloud' };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : describe(e, 'Cloud save') };
+    }
   }
 
   // ---------- cloud sync steps ----------

@@ -57,7 +57,7 @@ import { sfx } from './sfx';
 import type { GameRepository } from '../services/repository';
 import { createRepository } from '../services/repository';
 
-export type Screen = 'start' | 'setup' | 'game' | 'parent';
+export type Screen = 'start' | 'setup' | 'game' | 'parent' | 'family' | 'parent-live';
 
 export interface DialogueChoice {
   label: string;

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { store } from '../core/store';
-import type { Appearance, HairStyle, Role, VoiceProfile } from '../domain/types';
+import type { Appearance, HairStyle, Profile, Role, Settings, VoiceProfile } from '../domain/types';
 import {
   DEFAULT_PLAYER_LOOK,
   DEFAULT_VOICES,
@@ -124,7 +124,11 @@ function VoiceControls({
   );
 }
 
-export default function FamilySetup() {
+/**
+ * `onCreate` switches the screen into "online family" mode: instead of starting a local game,
+ * the finished profile is handed back (FamilyGate then creates the online family).
+ */
+export default function FamilySetup({ onCreate, onBack }: { onCreate?: (profile: Profile, settings: Settings) => void; onBack?: () => void } = {}) {
   const [name, setName] = useState('');
   const [look, setLook] = useState<Appearance>({ ...DEFAULT_PLAYER_LOOK });
   const [presetId, setPresetId] = useState(FAMILY_PRESETS[0].id);
@@ -140,13 +144,14 @@ export default function FamilySetup() {
   const preset = FAMILY_PRESETS.find((p) => p.id === presetId) ?? FAMILY_PRESETS[0];
   const playerKind = kindOf('player');
   const set = (patch: Partial<Appearance>) => setLook((l) => ({ ...l, ...patch }));
+  const back = () => (onBack ? onBack() : store.goToScreen('start'));
   const vp = (r: Role): VoiceProfile =>
     voices[r] ?? (r === 'partner' && partner ? { ...partnerMember(partner).voice! } : { ...DEFAULT_VOICES[r] });
   const setVp = (r: Role, v: VoiceProfile) => setVoices((m) => ({ ...m, [r]: v }));
 
   useEffect(() => {
     restorePrefs();
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && !isTypingTarget(e.target) && store.goToScreen('start');
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && !isTypingTarget(e.target) && back();
     window.addEventListener('keydown', onKey);
     return () => {
       window.removeEventListener('keydown', onKey);
@@ -190,6 +195,7 @@ export default function FamilySetup() {
     if (partner && partnerNameInput.trim()) overrides.partner = partnerNameInput.trim();
     const profile = buildProfile(name.trim(), look, preset, overrides, partner);
     for (const m of profile.members) m.voice = { ...vp(m.role) };
+    if (onCreate) return onCreate(profile, { ...settings, region: regionId });
     store.newGame(profile, { region: regionId, difficulty: settings.difficulty });
   }
 
@@ -199,10 +205,10 @@ export default function FamilySetup() {
     <div className="screen setup screen-scroll">
       <div className="setup-inner">
         <header className="setup-head">
-          <button className="icon-btn" onClick={() => store.goToScreen('start')} aria-label="Back to title" title="Back (Esc)">
+          <button className="icon-btn" onClick={back} aria-label={onBack ? 'Back' : 'Back to title'} title="Back (Esc)">
             ←
           </button>
-          <h1>Create your life</h1>
+          <h1>{onCreate ? 'Set up your family' : 'Create your life'}</h1>
         </header>
 
         <section className="panel setup-card" aria-labelledby="where-h">
@@ -385,11 +391,11 @@ export default function FamilySetup() {
         </section>
 
         <div className="setup-cta">
-          <button className="btn" onClick={() => store.goToScreen('start')}>
+          <button className="btn" onClick={back}>
             Back
           </button>
           <button className="btn btn-primary btn-lg" onClick={start}>
-            Start life as {displayName} ▶
+            {onCreate ? 'Next: create online family ▶' : `Start life as ${displayName} ▶`}
           </button>
         </div>
       </div>

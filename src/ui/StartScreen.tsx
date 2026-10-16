@@ -6,8 +6,11 @@ import ParentDashboard from './ParentDashboard';
 import { ControlsList } from './HelpModal';
 import SettingsModal, { restorePrefs, useDisplaySettings } from './SettingsModal';
 import { REGIONS, region } from '../domain/region';
+import { currentSession, leaveFamilyOnThisDevice, multiplayerAvailable } from '../services/family';
+import { startChildGame } from '../core/familySync';
+import './family.css';
 
-type Overlay = null | 'settings' | 'help' | 'parent-nosave';
+type Overlay = null | 'settings' | 'help' | 'parent-nosave' | 'leave-family';
 
 const STARS = [
   [8, 6], [22, 12], [35, 4], [48, 15], [61, 7], [74, 11], [88, 5], [93, 17], [15, 22], [56, 24], [80, 26], [30, 28], [67, 3],
@@ -82,6 +85,8 @@ export default function StartScreen({ parentOpen = false }: { parentOpen?: boole
   const [error, setError] = useState<string | null>(null);
   const hasSave = store.repo.hasSave();
   const cloud = store.repo.kind === 'supabase';
+  const online = multiplayerAvailable();
+  const [session, setSession] = useState(() => currentSession());
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -99,6 +104,21 @@ export default function StartScreen({ parentOpen = false }: { parentOpen?: boole
     const ok = await store.continueGame();
     setBusy(false);
     if (!ok) setError("Couldn't load your save. Try starting a new game.");
+  }
+
+  async function onSession() {
+    if (!session) return;
+    if (session.kind === 'parent') return store.goToScreen('parent-live');
+    setBusy(true);
+    setError(null);
+    try {
+      await startChildGame(session);
+      if (store.ui.screen !== 'game') store.goToScreen('game');
+    } catch {
+      setError("Couldn't open your family game. Check the internet connection and try again.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function onParent() {
@@ -125,16 +145,36 @@ export default function StartScreen({ parentOpen = false }: { parentOpen?: boole
         <h1 className="logo">LIFEQUEST</h1>
         <p className="tagline">Real life. Your rules.</p>
         <nav className="panel start-menu" aria-label="Main menu">
+          {session && (
+            <>
+              <button className="btn btn-primary btn-lg" onClick={onSession} disabled={busy} autoFocus style={{ whiteSpace: 'normal' }}>
+                ▶ Continue as {session.displayName} · {session.familyName}
+              </button>
+              <button type="button" className="fam-link start-session" onClick={() => setOverlay('leave-family')} disabled={busy}>
+                Not you? Switch family
+              </button>
+            </>
+          )}
+          {online && !session && (
+            <button className="btn btn-primary btn-lg" onClick={() => store.goToScreen('family')} disabled={busy} autoFocus>
+              👨‍👩‍👧 Family (online)
+            </button>
+          )}
           {hasSave && (
-            <button className="btn btn-primary btn-lg" onClick={onContinue} disabled={busy} autoFocus>
+            <button className={`btn btn-lg ${online ? '' : 'btn-primary'}`} onClick={onContinue} disabled={busy} autoFocus={!online && !session}>
               ▶ Continue
             </button>
           )}
-          <button className={`btn btn-lg ${hasSave ? '' : 'btn-primary'}`} onClick={() => store.goToScreen('setup')} disabled={busy} autoFocus={!hasSave}>
+          <button className={`btn btn-lg ${hasSave || online ? '' : 'btn-primary'}`} onClick={() => store.goToScreen('setup')} disabled={busy} autoFocus={!hasSave && !online && !session}>
             ✚ New game
           </button>
+          {online && session && (
+            <button className="btn" onClick={() => store.goToScreen('family')} disabled={busy}>
+              👨‍👩‍👧 Family (online)
+            </button>
+          )}
           <button className="btn" onClick={onParent} disabled={busy}>
-            ⚑ Parent mode
+            ⚑ Parent mode{online ? ' (offline)' : ''}
           </button>
           <div className="row">
             <button className="btn grow" onClick={() => setOverlay('settings')}>
@@ -187,6 +227,37 @@ export default function StartScreen({ parentOpen = false }: { parentOpen?: boole
         >
           <p>Parent mode lets a guardian assign tasks, set a budget and deadline, and review results.</p>
           <p className="muted">It needs a family first. Start a new game to create the player and family, then come back here (or open it from the pause menu).</p>
+        </Modal>
+      )}
+
+      {overlay === 'leave-family' && session && (
+        <Modal
+          title="Switch family?"
+          icon="👨‍👩‍👧"
+          size="sm"
+          onClose={() => setOverlay(null)}
+          footer={
+            <>
+              <button className="btn btn-ghost" onClick={() => setOverlay(null)} data-autofocus>
+                Cancel
+              </button>
+              <button
+                className="btn btn-danger"
+                onClick={() => {
+                  leaveFamilyOnThisDevice();
+                  setSession(currentSession());
+                  setOverlay(null);
+                }}
+              >
+                Leave on this device
+              </button>
+            </>
+          }
+        >
+          <p>
+            This device stops playing as <b style={{ fontWeight: 'normal' }}>{session.displayName}</b> in {session.familyName}.
+          </p>
+          <p className="muted">Nothing is deleted. You can join again with the family code.</p>
         </Modal>
       )}
 
