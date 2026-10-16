@@ -4,6 +4,8 @@ import { formatMoney } from '../domain/items';
 import { getMission } from '../missions/registry';
 import { useSnap } from './hooks';
 import { Modal, Stars } from './Modal';
+import { hoursWarnings, missionTerms } from './BriefingModal';
+import { formatDuration } from '../core/systems';
 
 export default function MissionBoard() {
   const { state } = useSnap();
@@ -29,8 +31,15 @@ export default function MissionBoard() {
                   </span>
                   {a.note && <span>“{a.note}”</span>}
                   <span className="n-meta">
-                    {a.budget != null && <>Budget {formatMoney(a.budget)} · </>}
-                    {a.deadlineMinutes != null ? `${a.deadlineMinutes} min` : 'No deadline'}
+                    {(() => {
+                      const t = missionTerms(def, a);
+                      return (
+                        <>
+                          {t.budget != null && <>Budget {formatMoney(t.budget)} · </>}
+                          {t.deadline != null ? formatDuration(t.deadline) : 'No deadline'}
+                        </>
+                      );
+                    })()}
                   </span>
                 </button>
               );
@@ -45,6 +54,8 @@ export default function MissionBoard() {
             const done = store.doneToday(def.id);
             const who = store.defaultAssigner(def);
             const disabled = busy || !avail.ok;
+            const terms = missionTerms(def);
+            const warn = avail.ok ? hoursWarnings(def, state.clock.minutes, terms.deadline).find((w) => w.tone !== 'info') : undefined;
             return (
               <button key={def.id} className="note" disabled={disabled} onClick={() => store.offerMission(def.id)} data-autofocus={undefined}>
                 {done && <span className="n-tag">Done today ✓</span>}
@@ -54,6 +65,14 @@ export default function MissionBoard() {
                 <Stars n={def.difficulty} />
                 <span>{def.summary}</span>
                 <span className="n-meta">From {who ? `${who.name} (${ROLE_LABELS[who.role]})` : def.assignerRoles.map((r) => ROLE_LABELS[r]).join(' / ')}</span>
+                {(terms.budget != null || terms.deadline != null) && (
+                  <span className="n-meta">
+                    {terms.budget != null && <>💰 {formatMoney(terms.budget)}</>}
+                    {terms.budget != null && terms.deadline != null && ' · '}
+                    {terms.deadline != null && <>⏱ {formatDuration(terms.deadline)}</>}
+                  </span>
+                )}
+                {warn && <span className="n-meta n-warn">🕘 {warn.text}</span>}
                 {!avail.ok && <span className="n-meta" style={{ color: '#a8381a' }}>✕ {avail.reason ?? 'Not available right now'}</span>}
               </button>
             );

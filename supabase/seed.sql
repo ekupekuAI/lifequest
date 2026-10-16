@@ -99,3 +99,22 @@ on conflict (slug) do update set
   difficulty  = excluded.difficulty,
   definition  = excluded.definition,
   is_active   = excluded.is_active;
+
+-- v2 missions (definitions are descriptive; gameplay logic lives in src/missions/*.ts)
+insert into public.mission_templates (slug, title, description, category, difficulty, definition, is_active)
+values
+  ('cook-meal', 'Help Make Dinner', 'Wash, chop and cook a simple vegetable soup, set the table, and never leave the stove unattended.', 'household', 2,
+   '{"deadlineMinutes": 45, "location": "home", "skills": ["household", "time", "planning", "responsibility"], "challenges": ["pot-burning"]}'::jsonb, true),
+  ('laundry', 'Do the Laundry', 'Sort whites from colours, measure detergent, run the machine and hang the clothes to dry.', 'household', 2,
+   '{"deadlineMinutes": 70, "location": "home", "skills": ["household", "planning", "problem", "responsibility"], "challenges": ["red-sock", "too-much-detergent"]}'::jsonb, true),
+  ('bus-trip', 'Return the Library Book', 'Buy a ticket, take the right bus to the city and return a library book before closing time.', 'errand', 2,
+   '{"deadlineMinutes": 80, "location": "city", "skills": ["planning", "time", "budget", "problem"], "challenges": ["wrong-bus", "bus-delayed", "exact-change"]}'::jsonb, true),
+  ('errands', 'Evening Errands', 'Plan three errands around opening hours: post a letter, buy bread, and one more stop before closing.', 'errand', 3,
+   '{"location": "town", "skills": ["planning", "time", "decisions", "responsibility"], "challenges": ["closing-time"]}'::jsonb, true)
+on conflict (slug) do update set
+  title       = excluded.title,
+  description = excluded.description,
+  category    = excluded.category,
+  difficulty  = excluded.difficulty,
+  definition  = excluded.definition,
+  is_active   = excluded.is_active;

@@ -49,6 +49,9 @@ export default function PauseMenu() {
         <button className="btn" onClick={() => store.openModal({ type: 'parent' })}>
           ⚑ Parent dashboard
         </button>
+        <button className="btn" onClick={() => store.openModal({ type: 'settings' })}>
+          ⚙ Settings
+        </button>
         <button className="btn" onClick={() => store.openModal({ type: 'help' })}>
           ? Controls &amp; help
         </button>

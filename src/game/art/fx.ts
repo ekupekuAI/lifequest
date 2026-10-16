@@ -4,7 +4,22 @@ import { PAL, OUTLINE } from './palette';
 import { type Ctx, makeCanvas, px, rect, hline, vline, ellipse, sprite, outlineOuter } from './draw';
 import { drawPixelText } from './pixelFont';
 
-export const FX_KEYS = ['heart', 'cloud', 'sparkle', 'coin', 'exclaim', 'prompt', 'shadow', 'raindrop', 'zzz'] as const;
+export const FX_KEYS = [
+  'heart',
+  'cloud',
+  'sparkle',
+  'coin',
+  'exclaim',
+  'prompt',
+  'shadow',
+  'raindrop',
+  'zzz',
+  'steam',
+  'smoke',
+  'music',
+  'bubble',
+  'check',
+] as const;
 export type FxKey = (typeof FX_KEYS)[number];
 
 function heart(ctx: Ctx) {
@@ -114,6 +129,105 @@ function zzz(ctx: Ctx) {
   sprite(ctx, 10, 0, ['#####', '...#.', '..#..', '.#...', '#####'], { '#': '#ffffff' });
 }
 
+function puffs(ctx: Ctx, g: readonly string[]) {
+  // billowing cloud at the bottom, smaller wisps drifting up-right
+  ellipse(ctx, 1, 9, 8, 6, g[1]);
+  ellipse(ctx, 6, 8, 8, 7, g[1]);
+  ellipse(ctx, 2, 9, 6, 4, g[2]);
+  ellipse(ctx, 7, 8, 6, 5, g[2]);
+  ellipse(ctx, 6, 3, 6, 5, g[1]);
+  ellipse(ctx, 7, 3, 4, 3, g[2]);
+  ellipse(ctx, 11, 0, 4, 4, g[1]);
+  px(ctx, 12, 1, g[2]);
+  px(ctx, 3, 10, g[3]);
+  px(ctx, 8, 9, g[3]);
+  px(ctx, 8, 4, g[3]);
+}
+
+function steam(ctx: Ctx) {
+  puffs(ctx, ['#b4aebb', '#e6e2ea', '#fbf8ff', '#ffffff']);
+}
+
+function smoke(ctx: Ctx) {
+  puffs(ctx, ['#2a2236', '#3e3550', '#574c6a', '#7a6e90']);
+}
+
+function music(ctx: Ctx) {
+  const c = PAL.purple;
+  // beamed pair of quavers
+  sprite(
+    ctx,
+    2,
+    1,
+    [
+      '....########',
+      '....########',
+      '....#......#',
+      '....#......#',
+      '....#......#',
+      '....#......#',
+      '....#......#',
+      '....#......#',
+      '.####...####',
+      '#####..#####',
+      '#####..#####',
+      '.###....###.',
+    ],
+    { '#': c[3] },
+  );
+  hline(ctx, 6, 1, 8, c[4]);
+  px(ctx, 3, 10, c[4]);
+  px(ctx, 10, 10, c[4]);
+  px(ctx, 14, 13, PAL.yellow[4]);
+}
+
+function soapBubble(ctx: Ctx) {
+  ellipse(ctx, 2, 2, 12, 12, 'rgba(190,230,250,0.55)');
+  ellipse(ctx, 3, 3, 10, 10, 'rgba(225,245,255,0.35)');
+  // rim tint
+  for (const [x, y, c] of [
+    [3, 10, '#f2a6d0'],
+    [4, 11, '#f2a6d0'],
+    [11, 4, '#9fe0d0'],
+    [12, 5, '#9fe0d0'],
+    [10, 12, '#c2a6f4'],
+  ] as [number, number, string][])
+    px(ctx, x, y, c);
+  // highlights
+  rect(ctx, 5, 4, 2, 1, '#ffffff');
+  px(ctx, 4, 5, '#ffffff');
+  px(ctx, 10, 10, '#ffffff');
+}
+
+function check(ctx: Ctx) {
+  const g = PAL.green;
+  sprite(
+    ctx,
+    1,
+    3,
+    [
+      '...........##',
+      '..........###',
+      '.........###.',
+      '##......###..',
+      '###....###...',
+      '.###..###....',
+      '..######.....',
+      '...####......',
+      '....##.......',
+    ],
+    { '#': g[3] },
+  );
+  px(ctx, 12, 3, g[4]);
+  px(ctx, 1, 6, g[4]);
+  for (const [x, y] of [
+    [5, 11],
+    [6, 11],
+    [5, 10],
+  ])
+    px(ctx, x, y, g[2]);
+}
+
 const cache = new Map<string, HTMLCanvasElement>();
 
 export function drawFx(key: string): HTMLCanvasElement {
@@ -145,8 +259,15 @@ export function drawFx(key: string): HTMLCanvasElement {
       else if (key === 'exclaim') exclaim(ctx);
       else if (key === 'prompt') prompt(ctx);
       else if (key === 'zzz') zzz(ctx);
+      else if (key === 'steam') steam(ctx);
+      else if (key === 'smoke') smoke(ctx);
+      else if (key === 'music') music(ctx);
+      else if (key === 'bubble') soapBubble(ctx);
+      else if (key === 'check') check(ctx);
       else sparkle(ctx);
-      outlineOuter(c, OUTLINE, key === 'zzz' ? 0.6 : 0.95);
+      const soft: Record<string, number> = { zzz: 0.6, steam: 0.45, smoke: 0.7, bubble: 0 };
+      const a = soft[key] ?? 0.95;
+      if (a > 0) outlineOuter(c, OUTLINE, a);
     }
   }
   cache.set(key, c);

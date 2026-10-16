@@ -5,6 +5,11 @@ import { makeCanvas, outlineInner } from './draw';
 import { HOME_PROPS } from './props-home';
 import { TOWN_PROPS } from './props-town';
 import { SHOP_PROPS } from './props-shop';
+import { CITY_PROPS } from './props-city';
+import { HOME_EXTRA_PROPS, HOME_EXTRA_NO_OUTLINE } from './props-home-extra';
+import { onSignTextChange } from './signs';
+
+export { SIGN_TEXT, SIGN_DEFAULTS, SIGN_PROP_KEYS, setSignText, fitText, drawFittedText } from './signs';
 
 export interface PropDef {
   w: number;
@@ -16,12 +21,17 @@ export const PROPS: Record<string, PropDef> = {
   ...HOME_PROPS,
   ...TOWN_PROPS,
   ...SHOP_PROPS,
+  ...CITY_PROPS,
+  ...HOME_EXTRA_PROPS,
 };
 
 /** Props that must stay soft / borderless (glows, overlays). */
-const NO_OUTLINE = new Set(['lamp-glow', 'shelf-dairy-empty-slot', 'manhole']);
+const NO_OUTLINE = new Set(['lamp-glow', 'shelf-dairy-empty-slot', 'manhole', ...HOME_EXTRA_NO_OUTLINE]);
 
 const cache = new Map<string, HTMLCanvasElement>();
+
+// sign text changed -> every cached prop may be stale (cheap to redraw)
+onSignTextChange(() => cache.clear());
 
 /** Render a prop by key (cached). Unknown keys -> a small magenta-free placeholder crate. */
 export function drawProp(key: string): HTMLCanvasElement {

@@ -52,6 +52,32 @@ No configuration is needed. Without Supabase credentials the game runs in **loca
 - **Free play**: snack at the fridge for energy, sleep to start a new day (the room gets messy again and the shops restock), read the bus timetable, chat with townsfolk.
 - Touch controls, a responsive HUD, synthesised sound effects, and autosave.
 
+## v2: a more realistic, worldwide world
+
+- **Worldwide region presets:** 🇮🇳 India, 🇺🇸 USA, 🇬🇧 UK, 🇪🇺 Euro, 🇳🇬 Nigeria, 🇯🇵 Japan, 🇧🇷 Brazil and 🇲🇽 Mexico. Each preset sets the currency and rounded prices, default family and shop names, shop signs, and everyday words (Grandma / Dadi / Abuela / Oma…). The life lessons are universal. See `src/domain/region.ts`.
+- **Every character has a voice.** Family members and NPCs speak their lines through the browser's built-in speech engine (free, offline-capable). Each character gets a distinct voice, pitch and speed, and players can tune their family's voices during setup. A "babble" mode (per-character syllable sounds) works on any device. See `src/core/voice.ts`.
+- **Difficulty:** Relaxed, Real life or Busy day. Changes the budget, deadlines, queue lengths, clock speed and how many surprises appear.
+- **A living town:**
+  - Opening hours: closed shops really are closed.
+  - A bus timetable with a right bus and a wrong bus.
+  - Family routines: Dad gets home at 5:30 and everyone eats dinner at 7.
+  - Daily pocket money and a piggy-bank savings goal.
+- **Everyday realism:**
+  - A returns desk (bring the receipt the same day).
+  - Short change at the corner shop (count it!).
+  - Short-dated milk on discount, and "3 for 2" offers you probably don't need.
+  - A locked front door if you forget your keys.
+- **Easier to understand:**
+  - An on-screen guide arrow toward the next objective, and a 💡 Hint button (H).
+  - "What if…?" on the results screen, showing what the other choices would have led to.
+  - An end-of-day reflection journal that parents can read in Parent Mode.
+- **New missions:**
+  - Help Make Dinner: wash, chop, cook without burning, set the table.
+  - Do the Laundry: sort whites from colours (watch for the red sock!), measure detergent, use the wait time well.
+  - Return the Library Book: ticket machine vs paying the driver, Bus 12 vs Bus 7, the city centre and the library.
+  - Evening Errands: plan your route around closing times.
+- **Accessibility:** text size up to 130%, a colour-safe palette, a reduced-motion mode, and the guide arrow can be turned off.
+
 ## Project structure
 
 ```

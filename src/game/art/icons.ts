@@ -7,8 +7,13 @@ import { drawPortrait, drawCharacterSheet, FRAME_W, FRAME_H, type CharKind } fro
 import { drawProp } from './props';
 import { drawFx } from './fx';
 import { makeCanvas } from './draw';
+import { onSignTextChange } from './signs';
 
 const urls = new Map<string, string>();
+
+onSignTextChange(() => {
+  for (const k of [...urls.keys()]) if (k.startsWith('prop:')) urls.delete(k);
+});
 
 function toUrl(key: string, make: () => HTMLCanvasElement, scale: number): string {
   const k = `${key}@${scale}`;

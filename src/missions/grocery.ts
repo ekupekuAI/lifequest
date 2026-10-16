@@ -1,10 +1,11 @@
 import type { MissionDef } from './types';
 import type { GameStore } from '../core/store';
 import { formatMoney, itemName } from '../domain/items';
+import { region, words } from '../domain/region';
 import { budgetScore, checkRequired, clamp, timeScore } from './validation';
 
 const REQUIRED = [
-  { item: 'milk-packet', qty: 1, alternatives: ['milk-tetra'] },
+  { item: 'milk-packet', qty: 1, alternatives: ['milk-tetra', 'milk-tetra-old'] },
   { item: 'tomato', qty: 2 },
   { item: 'potatoes', qty: 1, alternatives: ['baby-potatoes'] },
 ];
@@ -79,8 +80,9 @@ function finishDelivery(s: GameStore, use: Record<string, number>, incomplete: b
   for (const [id, q] of Object.entries(use)) s.takeItem(id, q);
   run.flags['deliveredAt'] = s.state.clock.minutes;
   const lines: string[] = [];
-  const subs = Object.keys(use).filter((id) => id === 'milk-tetra' || id === 'baby-potatoes');
+  const subs = Object.keys(use).filter((id) => id === 'milk-tetra' || id === 'milk-tetra-old' || id === 'baby-potatoes');
   if (subs.includes('milk-tetra')) lines.push('Tetra pack milk — good thinking when the packets ran out.');
+  if (subs.includes('milk-tetra-old')) lines.push(words("Short-dated milk — fine for tonight's {tea}, but it won't last until breakfast. Good saving though!"));
   if (subs.includes('baby-potatoes')) lines.push('Premium baby potatoes? They work, but they cost almost double.');
   for (const [id, why] of Object.entries(NOT_ACCEPTED)) if (s.hasItem(id)) lines.push(`Hmm, ${why}.`);
   const { extras } = wastedSpend(s);
@@ -117,7 +119,7 @@ export const groceryRun: MissionDef = {
   destination: 'grocery',
   briefing: 'Please buy one packet of milk, two tomatoes, and one bag of potatoes. You have {budget}. Please return before dinner.',
   instructions: [
-    'FreshMart is across the road (south-west of our house). Sharma General Store is the kiosk next to it.',
+    'FreshMart is across the road — use the zebra crossing. The corner shop kiosk is right next to it.',
     'Take the cloth bag from the hook by the kitchen door — paper bags cost extra.',
     'The sky looks cloudy. An umbrella hangs by the kitchen door too.',
     'If something is unavailable, ask or call home before buying a substitute.',
@@ -125,12 +127,12 @@ export const groceryRun: MissionDef = {
   ],
   objectives: [
     { id: 'receive-list', label: 'Get the shopping list', type: 'talk', required: true },
-    { id: 'take-bag', label: 'Take the cloth bag from the hook (optional)', type: 'collect', required: false },
-    { id: 'reach-store', label: 'Walk to FreshMart', type: 'reach', target: 'grocery', required: true },
-    { id: 'checkout', label: 'Pay for your shopping', type: 'checkout', required: true },
-    { id: 'buy-items', label: 'Have every item on the list', type: 'collect', required: true },
-    { id: 'return-home', label: 'Return home', type: 'reach', target: 'home', required: true, dependsOn: ['checkout'] },
-    { id: 'deliver', label: 'Give the groceries to {assigner}', type: 'deliver', required: true },
+    { id: 'take-bag', label: 'Take the cloth bag from the hook (optional)', type: 'collect', required: false, where: { location: 'home', target: 'hook-bag' } },
+    { id: 'reach-store', label: 'Walk to FreshMart', type: 'reach', target: 'grocery', required: true, where: { location: 'grocery' }, hint: 'Leave by the front door, follow the garden path to the road and cross at the zebra crossing.' },
+    { id: 'checkout', label: 'Pay for your shopping', type: 'checkout', required: true, where: { location: 'grocery', target: 'checkout' }, hint: 'Pick items from the shelves (E), then join the checkout queue.' },
+    { id: 'buy-items', label: 'Have every item on the list', type: 'collect', required: true, where: { location: 'grocery', target: 'shelf-veg' }, hint: 'Open your journal (J) to see what is still missing.' },
+    { id: 'return-home', label: 'Return home', type: 'reach', target: 'home', required: true, dependsOn: ['checkout'], where: { location: 'home' } },
+    { id: 'deliver', label: 'Give the groceries to {assigner}', type: 'deliver', required: true, where: { location: 'home', target: 'assigner' }, hint: 'Talk to them (E) to hand over the shopping and the change.' },
   ],
   requiredItems: REQUIRED,
   optionalItems: ['cloth-bag', 'umbrella'],

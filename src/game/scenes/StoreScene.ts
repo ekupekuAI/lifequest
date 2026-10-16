@@ -119,6 +119,8 @@ export class StoreScene extends WorldScene {
     this.interact({ id: 'shelf-snacks', x: 10 * T + 8, y: b(7) + 2, r: 22, label: 'Browse snacks & drinks' });
     this.prop({ key: 'basket-stack', x: c(12), y: b(12) });
     this.interact({ id: 'baskets', x: c(12), y: b(12) - 4, label: 'Shopping baskets', flavor: 'You grab a basket. Items you pick go in here until you pay.' });
+    this.prop({ key: 'service-desk', x: 3 * T + 8, y: b(10), solid: 12 });
+    this.interact({ id: 'service-desk', x: 3 * T + 8, y: b(10) + 4, r: 22, label: 'Returns & exchanges desk' });
     this.prop({ key: 'plant', x: c(1), y: b(12), solid: 6 });
     this.prop({ key: 'plant', x: c(18), y: b(12), solid: 6 });
 

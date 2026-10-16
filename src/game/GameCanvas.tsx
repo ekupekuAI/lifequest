@@ -5,6 +5,8 @@ import { HomeScene } from './scenes/HomeScene';
 import { TownScene } from './scenes/TownScene';
 import { StoreScene } from './scenes/StoreScene';
 import { ClinicScene } from './scenes/ClinicScene';
+import { CityScene } from './scenes/CityScene';
+import { LibraryScene } from './scenes/LibraryScene';
 
 /** Hosts the single Phaser instance. Created once on mount, destroyed on unmount. */
 export default function GameCanvas() {
@@ -23,7 +25,7 @@ export default function GameCanvas() {
       physics: { default: 'arcade', arcade: { debug: false } },
       input: { keyboard: { target: window }, touch: true },
       audio: { noAudio: true },
-      scene: [BootScene, HomeScene, TownScene, StoreScene, ClinicScene],
+      scene: [BootScene, HomeScene, TownScene, StoreScene, ClinicScene, CityScene, LibraryScene],
       banner: false,
     });
     (window as any).__phaser = game.current;

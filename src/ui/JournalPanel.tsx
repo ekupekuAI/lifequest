@@ -3,18 +3,23 @@ import { store } from '../core/store';
 import { formatClock, formatDuration, inventoryWeight } from '../core/systems';
 import { ITEMS, formatMoney, itemName } from '../domain/items';
 import { SKILL_LABELS, type SkillId } from '../domain/types';
+import { ROLE_LABELS } from '../domain/family';
+import { money } from '../domain/region';
+import { ALLOWANCE_BASE, BUS, OPENING_HOURS, nextBus, scheduleFor } from '../domain/world';
 import { fmt } from '../missions/format';
 import { levelFor, useSnap } from './hooks';
 import { Bar, Modal } from './Modal';
 import { ItemIcon } from './art';
 import { ShoppingChecklist } from './ShoppingList';
-import { currentObjectiveId } from './HUD';
+import { currentObjectiveId, hoursPlaceName, openStatus, time12 } from './HUD';
 
-type Tab = 'mission' | 'bag' | 'money' | 'skills';
+type Tab = 'mission' | 'bag' | 'money' | 'savings' | 'town' | 'skills';
 const TABS: { id: Tab; label: string }[] = [
   { id: 'mission', label: 'Task' },
   { id: 'bag', label: 'Bag' },
   { id: 'money', label: 'Money' },
+  { id: 'savings', label: 'Savings' },
+  { id: 'town', label: 'Town' },
   { id: 'skills', label: 'Skills' },
 ];
 let lastTab: Tab = 'mission';
@@ -234,24 +239,229 @@ function MoneyTab() {
                 <b className="label" style={{ color: 'var(--text)' }}>{r.store}</b>
                 <span className="muted">{formatClock(r.at)}</span>
               </div>
-              {r.lines.map((l, j) => (
-                <div key={j} className="row spread">
-                  <span>
-                    {l.qty}× {l.name}
-                  </span>
-                  <span>{formatMoney(l.price * l.qty)}</span>
-                </div>
-              ))}
+              {r.lines.map((l, j) => {
+                const discount = l.price < 0;
+                const returned = l.returned ?? 0;
+                return (
+                  <div key={j} className={`row spread rc-line ${discount ? 'rc-discount' : ''} ${returned ? 'rc-returned' : ''}`}>
+                    <span>
+                      {discount ? '🏷 ' : `${l.qty}× `}
+                      {l.name}
+                      {returned > 0 && <span className="pill sky rc-tag">{returned >= l.qty ? 'Returned' : `${returned} returned`}</span>}
+                    </span>
+                    <span className={discount ? 'good' : ''}>
+                      {discount ? '−' : ''}
+                      {formatMoney(Math.abs(l.price * l.qty))}
+                    </span>
+                  </div>
+                );
+              })}
               <div className="row spread" style={{ borderTop: '1px dashed var(--frame)', marginTop: 3, paddingTop: 2 }}>
                 <span>Total</span>
                 <b className="warn">{formatMoney(r.total)}</b>
               </div>
+              {r.lines.some((l) => l.returned) && (
+                <div className="row spread tiny">
+                  <span className="muted">Refunded</span>
+                  <span className="good">+{formatMoney(r.lines.reduce((n, l) => n + (l.returned ?? 0) * Math.max(0, l.price), 0))}</span>
+                </div>
+              )}
             </div>
           ))
         ) : (
           <p className="muted small">No receipts yet. Shops give you one when you pay.</p>
         )}
+        {store.returnableLines().length > 0 && (
+          <p className="tiny muted">Bought the wrong thing? FreshMart's service desk refunds unopened items on the same day with the receipt.</p>
+        )}
       </div>
+    </>
+  );
+}
+
+function SavingsTab() {
+  const { state } = useSnap();
+  const sv = state.savings;
+  const pct = Math.min(100, Math.round((sv.balance / Math.max(1, sv.target)) * 100));
+  const allowance = money(ALLOWANCE_BASE);
+  const daysLeft = Math.max(0, Math.ceil((sv.target - sv.balance) / Math.max(0.01, allowance)));
+  const entries = [...state.wallet.ledger].reverse().filter((t) => /pocket money|savings|Saved toward/i.test(t.label)).slice(0, 10);
+  return (
+    <>
+      <div className="row">
+        <span style={{ fontSize: '1.6rem' }} aria-hidden>
+          🐷
+        </span>
+        <div className="grow">
+          <div className="label" style={{ color: 'var(--gold)' }}>Goal: {sv.goal}</div>
+          <div className="row">
+            <span className="grow">
+              <Bar value={sv.balance} max={sv.target} tone={pct >= 100 ? 'good' : 'warn'} label={`Savings toward ${sv.goal}`} />
+            </span>
+            <span className="small">{pct}%</span>
+          </div>
+        </div>
+      </div>
+      <div className="kv">
+        <div>
+          <span className="label">Saved</span>
+          <b className="good">{formatMoney(sv.balance)}</b>
+        </div>
+        <div>
+          <span className="label">Target</span>
+          <b>{formatMoney(sv.target)}</b>
+        </div>
+        <div>
+          <span className="label">Wallet</span>
+          <b className="warn">{formatMoney(state.wallet.balance)}</b>
+        </div>
+      </div>
+      <div className="section">
+        <h3>How it works</h3>
+        <ul className="bullets mint">
+          <li>Every morning you get {formatMoney(allowance)} pocket money.</li>
+          <li>Use the piggy bank in your room to put money aside — or take some out if you really need it.</li>
+          <li>
+            {pct >= 100
+              ? 'Goal reached — well done for being patient!'
+              : `If you saved all your pocket money, you would reach the goal in about ${daysLeft} day${daysLeft === 1 ? '' : 's'}.`}
+          </li>
+          <li>Every treat you buy is money not saved. Small choices add up.</li>
+        </ul>
+      </div>
+      <div className="section">
+        <h3>Recent savings &amp; pocket money</h3>
+        {entries.length ? (
+          <table className="tbl">
+            <tbody>
+              {entries.map((t, i) => {
+                const saved = /Saved toward/.test(t.label);
+                return (
+                  <tr key={i}>
+                    <td className="muted" style={{ whiteSpace: 'nowrap' }}>
+                      {formatClock(t.at)}
+                    </td>
+                    <td>{t.label}</td>
+                    <td className={`num ${saved ? 'warn' : t.amount < 0 ? 'bad' : 'good'}`}>
+                      {saved ? '🐷 +' : t.amount < 0 ? '−' : '+'}
+                      {formatMoney(Math.abs(t.amount))}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        ) : (
+          <p className="muted small">Nothing yet. Visit the piggy bank in your room to start saving.</p>
+        )}
+      </div>
+    </>
+  );
+}
+
+function TownTab() {
+  const { state } = useSnap();
+  const now = state.clock.minutes;
+  const places = Object.keys(OPENING_HOURS).filter((k) => k !== 'bus');
+  const busHours = OPENING_HOURS.bus;
+  const departures = (route: 12 | 7) => {
+    const out: number[] = [];
+    const every = route === 12 ? BUS.route12Every : BUS.route7Every;
+    let t = nextBus(now, route);
+    for (let i = 0; i < 6 && out.length < 3; i++, t += every) {
+      const m = t % 1440;
+      if (!busHours || (m >= busHours.open && m < busHours.close)) out.push(t);
+    }
+    return out;
+  };
+  const routes = [
+    { n: 12 as const, to: 'City centre & library', ok: true, every: BUS.route12Every, off: BUS.route12Offset },
+    { n: 7 as const, to: 'Stadium — not the city!', ok: false, every: BUS.route7Every, off: BUS.route7Offset },
+  ];
+  const fam = state.profile.members.filter((m) => m.role !== 'player');
+  return (
+    <>
+      <div className="section">
+        <h3>Opening hours</h3>
+        <table className="tbl">
+          <tbody>
+            {places.map((k) => {
+              const st = openStatus(k, now);
+              return (
+                <tr key={k}>
+                  <td>{hoursPlaceName(k)}</td>
+                  <td className="muted">{store.hoursLabel(k)}</td>
+                  <td className="num">
+                    <span className={`pill ${!st?.open ? 'bad' : st.soon ? 'warn' : 'good'}`}>{!st?.open ? 'Closed' : st.soon ? 'Closing' : 'Open'}</span>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        <span className="tiny muted">Home and the street are always open.</span>
+      </div>
+      <div className="section">
+        <h3>Bus timetable</h3>
+        <div className="bus-grid">
+          {routes.map((r) => {
+            const deps = departures(r.n);
+            return (
+              <div key={r.n} className={`boxed bus-route ${r.ok ? 'ok' : 'wrong'}`}>
+                <div className="row">
+                  <span className="bus-no" aria-label={`Route ${r.n}`}>
+                    {r.n}
+                  </span>
+                  <span className="small grow">→ {r.to}</span>
+                </div>
+                <span className="tiny muted">
+                  Every {r.every} min, at :{String(r.off).padStart(2, '0')}
+                </span>
+                <span className="small">
+                  {deps.length ? (
+                    <>
+                      Next:{' '}
+                      {deps.map((t, i) => (
+                        <span key={t}>
+                          {i ? ' · ' : ''}
+                          <span className={i === 0 ? 'warn' : ''}>{time12(t)}</span>
+                          {i === 0 && <span className="muted"> ({Math.round(t - now) <= 0 ? 'at the stop now' : `in ${Math.round(t - now)} min`})</span>}
+                        </span>
+                      ))}
+                    </>
+                  ) : (
+                    <>No more buses today · service {store.hoursLabel('bus')}</>
+                  )}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+        <span className="tiny muted">
+          Ride: {BUS.rideMinutes} min. Ticket machine {formatMoney(money(BUS.ticketBase))} · cash to the driver {formatMoney(money(BUS.cashFareBase))}. Buses wait {BUS.dwell} min at the stop.
+        </span>
+      </div>
+      {fam.length > 0 && (
+        <div className="section">
+          <h3>Family right now</h3>
+          <ul className="col" style={{ gap: 3 }}>
+            {fam.map((m) => {
+              const sc = scheduleFor(m.role, now);
+              return (
+                <li key={m.id} className="row small family-row">
+                  <span className="grow">
+                    {m.name} <span className="tiny muted">{ROLE_LABELS[m.role]}</span>
+                  </span>
+                  <span className={sc.spot === 'away' ? 'muted' : ''}>
+                    {sc.spot === 'away' ? 'Out' : sc.spot.replace(/^./, (c) => c.toUpperCase())} · {sc.activity || 'around the house'}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+          <span className="tiny muted">Dinner is at 7 PM — everyone meets at the table.</span>
+        </div>
+      )}
     </>
   );
 }
@@ -322,7 +532,44 @@ function SkillsTab() {
           <p className="muted small">No finished tasks yet.</p>
         )}
       </div>
+      <div className="section">
+        <h3>My reflections</h3>
+        {state.reflections?.length ? (
+          <ReflectionList list={state.reflections} />
+        ) : (
+          <p className="muted small">When you go to sleep, write a short note about your day. Your notes appear here.</p>
+        )}
+      </div>
     </>
+  );
+}
+
+export function ReflectionList({ list, max = 10 }: { list: { day: number; wentWell: string; improve: string; mood: string }[]; max?: number }) {
+  return (
+    <ul className="col reflections">
+      {list.slice(0, max).map((r, i) => (
+        <li key={i} className="boxed small">
+          <div className="row spread">
+            <span className="label">Day {r.day}</span>
+            {r.mood && (
+              <span role="img" aria-label="Mood" className="refl-mood">
+                {r.mood}
+              </span>
+            )}
+          </div>
+          {r.wentWell && (
+            <div>
+              <span className="good">✓ Went well:</span> {r.wentWell}
+            </div>
+          )}
+          {r.improve && (
+            <div>
+              <span className="warn">↻ Next time:</span> {r.improve}
+            </div>
+          )}
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -363,6 +610,8 @@ export default function JournalPanel() {
         {tab === 'mission' && <MissionTab />}
         {tab === 'bag' && <BagTab />}
         {tab === 'money' && <MoneyTab />}
+        {tab === 'savings' && <SavingsTab />}
+        {tab === 'town' && <TownTab />}
         {tab === 'skills' && <SkillsTab />}
       </div>
     </Modal>

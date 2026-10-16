@@ -4,6 +4,8 @@ import { useSnap } from './hooks';
 import { Modal } from './Modal';
 import ParentDashboard from './ParentDashboard';
 import { ControlsList } from './HelpModal';
+import SettingsModal, { restorePrefs, useDisplaySettings } from './SettingsModal';
+import { REGIONS, region } from '../domain/region';
 
 type Overlay = null | 'settings' | 'help' | 'parent-nosave';
 
@@ -71,7 +73,10 @@ export function SkyBackdrop() {
 }
 
 export default function StartScreen({ parentOpen = false }: { parentOpen?: boolean }) {
-  const { ui } = useSnap();
+  const { ui, state } = useSnap();
+  useDisplaySettings();
+  useEffect(() => restorePrefs(), []);
+  const reg = REGIONS[state.settings?.region] ?? region();
   const [overlay, setOverlay] = useState<Overlay>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -145,33 +150,15 @@ export default function StartScreen({ parentOpen = false }: { parentOpen?: boole
           <span className={`save-dot ${cloud ? 'cloud' : 'local'}`} />
           <span>{cloud ? 'Cloud saves' : 'Local demo mode'}</span>
           <span className="dim">·</span>
+          <button type="button" className="start-region" onClick={() => setOverlay('settings')} title="Change region in Settings" aria-label={`Region: ${reg.label}, currency ${reg.currency.code}. Open settings`}>
+            <span aria-hidden>{reg.flag}</span> {reg.currency.symbol} {reg.currency.code}
+          </button>
+          <span className="dim">·</span>
           <span>Practice real-life skills, one task at a time.</span>
         </div>
       </main>
 
-      {overlay === 'settings' && (
-        <Modal title="Settings" icon="⚙" size="sm" onClose={() => setOverlay(null)}>
-          <div className="row spread">
-            <span>Sound effects</span>
-            <button
-              className={`btn btn-sm ${ui.sound ? 'btn-good' : ''}`}
-              role="switch"
-              aria-checked={ui.sound}
-              onClick={() => store.setUI({ sound: !ui.sound })}
-              data-autofocus
-            >
-              {ui.sound ? 'On' : 'Off'}
-            </button>
-          </div>
-          <div className="row spread">
-            <span>Save mode</span>
-            <span className={`pill ${cloud ? 'good' : 'sky'}`}>{cloud ? 'Cloud' : 'This device'}</span>
-          </div>
-          <p className="muted small">
-            {cloud ? 'Progress syncs to the cloud and is also kept on this device.' : 'Progress is saved in this browser only. No account needed.'}
-          </p>
-        </Modal>
-      )}
+      {overlay === 'settings' && <SettingsModal onClose={() => setOverlay(null)} inGame={false} />}
 
       {overlay === 'help' && (
         <Modal title="How to play" icon="?" size="sm" onClose={() => setOverlay(null)}>

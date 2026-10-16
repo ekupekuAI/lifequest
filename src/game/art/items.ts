@@ -498,7 +498,275 @@ const ICONS: Record<string, Draw> = {
     px(ctx, 10, 7, PAL.metal[2]);
     px(ctx, 10, 9, PAL.metal[2]);
   },
+  'house-keys': (ctx) => {
+    const m = PAL.metal;
+    // ring
+    sprite(ctx, 1, 1, ['.####.', '#....#', '#....#', '#....#', '.####.'], { '#': m[3] });
+    px(ctx, 2, 1, m[4]);
+    // brass house key (diagonal)
+    rect(ctx, 5, 5, 4, 4, Y[3]);
+    rect(ctx, 6, 6, 2, 2, Y[1]);
+    px(ctx, 5, 5, Y[4]);
+    for (let i = 0; i < 6; i++) rect(ctx, 8 + i, 8 + i, 2, 1, Y[2]);
+    px(ctx, 12, 14, Y[2]);
+    px(ctx, 11, 13, Y[1]);
+    px(ctx, 13, 11, Y[2]);
+    // silver key + tag
+    rect(ctx, 1, 7, 3, 3, m[3]);
+    vline(ctx, 2, 10, 5, m[4]);
+    px(ctx, 3, 13, m[2]);
+    px(ctx, 3, 14, m[2]);
+    rect(ctx, 6, 0, 4, 3, R[2]);
+    px(ctx, 6, 0, R[3]);
+  },
+  'bus-ticket': (ctx) => {
+    rect(ctx, 1, 4, 14, 8, '#f7e7b0');
+    hline(ctx, 1, 4, 14, '#fff6d0');
+    hline(ctx, 1, 11, 14, '#c9b070');
+    // perforated stub
+    for (let y = 4; y < 12; y += 2) px(ctx, 11, y, '#c9b070');
+    rect(ctx, 12, 5, 2, 6, PAL.orange[3]);
+    // bus pictogram + number
+    rect(ctx, 3, 6, 6, 3, B[2]);
+    hline(ctx, 4, 6, 4, B[4]);
+    px(ctx, 4, 9, OUTLINE);
+    px(ctx, 7, 9, OUTLINE);
+    hline(ctx, 3, 10, 5, PAL.metal[2]);
+    // punched hole
+    px(ctx, 9, 6, '#a08850');
+  },
+  'library-book': (ctx) => {
+    rect(ctx, 3, 2, 10, 12, G[2]);
+    vline(ctx, 3, 2, 12, G[1]);
+    vline(ctx, 4, 2, 12, G[3]);
+    rect(ctx, 11, 3, 2, 11, PAL.paper[3]);
+    vline(ctx, 12, 3, 11, PAL.paper[1]);
+    hline(ctx, 4, 13, 9, PAL.paper[2]);
+    // gold title + library label at the spine foot
+    hline(ctx, 6, 5, 4, Y[3]);
+    hline(ctx, 6, 7, 3, Y[3]);
+    rect(ctx, 5, 10, 4, 3, W[4]);
+    hline(ctx, 6, 11, 2, R[2]);
+    px(ctx, 5, 3, G[4]);
+  },
+  letter: (ctx) => {
+    rect(ctx, 1, 4, 14, 9, W[4]);
+    hline(ctx, 1, 12, 14, W[1]);
+    vline(ctx, 14, 4, 9, W[2]);
+    sprite(ctx, 1, 4, ['#............#', '.##........##.', '...##....##...', '.....####.....'], { '#': W[1] });
+    // stamp + red seal
+    rect(ctx, 11, 5, 3, 3, R[2]);
+    px(ctx, 12, 6, Y[3]);
+    hline(ctx, 3, 10, 5, PAL.metal[3]);
+    hline(ctx, 3, 11, 4, PAL.metal[3]);
+  },
+  parcel: (ctx) => {
+    const k = PAL.cork;
+    // box in 3/4: lid + front + side
+    rect(ctx, 2, 3, 10, 4, k[3]);
+    hline(ctx, 2, 3, 10, k[4]);
+    rect(ctx, 2, 7, 10, 7, k[2]);
+    rect(ctx, 12, 4, 2, 10, k[1]);
+    px(ctx, 12, 3, k[2]);
+    hline(ctx, 2, 13, 10, k[1]);
+    // string cross
+    vline(ctx, 7, 3, 11, '#efe2c0');
+    hline(ctx, 2, 5, 10, '#efe2c0');
+    hline(ctx, 2, 10, 10, '#efe2c0');
+    // label
+    rect(ctx, 3, 8, 3, 2, W[4]);
+    px(ctx, 6, 2, '#efe2c0');
+    px(ctx, 8, 2, '#efe2c0');
+  },
+  carrot: (ctx) => {
+    const o = PAL.orange;
+    for (let i = 0; i < 10; i++) {
+      const w = Math.max(1, 4 - Math.floor(i / 3));
+      rect(ctx, 3 + i, 4 + i - Math.floor(w / 2), w, w, o[2]);
+      px(ctx, 3 + i, 4 + i - Math.floor(w / 2), o[3]);
+    }
+    rect(ctx, 3, 3, 3, 3, o[2]);
+    px(ctx, 3, 3, o[4]);
+    px(ctx, 6, 7, o[1]);
+    px(ctx, 9, 10, o[1]);
+    // leafy top
+    sprite(ctx, 0, 0, ['#..#', '.##.', '###.', '.#..'], { '#': G[3] });
+    px(ctx, 1, 1, G[2]);
+    px(ctx, 2, 2, G[1]);
+  },
+  onion: (ctx) => {
+    const p = ['#5a2a4a', '#8a3e66', '#b85a86', '#d88aa8', '#f4c4d4'];
+    ellipse(ctx, 2, 4, 12, 11, p[2]);
+    ellipse(ctx, 3, 4, 8, 8, p[3]);
+    px(ctx, 5, 6, p[4]);
+    px(ctx, 6, 5, p[4]);
+    // layer lines
+    vline(ctx, 8, 6, 7, p[1]);
+    vline(ctx, 5, 8, 4, p[1]);
+    vline(ctx, 11, 7, 5, p[1]);
+    // neck + roots
+    rect(ctx, 7, 1, 2, 4, p[2]);
+    px(ctx, 7, 1, '#c9a070');
+    px(ctx, 8, 0, '#c9a070');
+    hline(ctx, 6, 15, 4, '#c9b090');
+  },
+  'chopped-veg': (ctx) => {
+    // small bowl of chopped carrot, onion, greens
+    ellipse(ctx, 1, 6, 14, 6, W[3]);
+    rect(ctx, 2, 9, 12, 3, W[2]);
+    ellipse(ctx, 3, 11, 10, 4, W[1]);
+    hline(ctx, 2, 9, 12, W[4]);
+    const bits: [number, number, string][] = [
+      [4, 7, PAL.orange[3]],
+      [6, 6, '#d88aa8'],
+      [8, 7, G[3]],
+      [10, 6, PAL.orange[2]],
+      [5, 8, G[2]],
+      [9, 8, '#f4c4d4'],
+      [11, 8, PAL.orange[3]],
+      [7, 8, PAL.orange[2]],
+    ];
+    for (const [x, y, c] of bits) px(ctx, x, y, c);
+    for (const [x, y, c] of bits) px(ctx, x + 1, y, c);
+  },
+  'soup-bowl': (ctx) => {
+    // steam
+    sprite(ctx, 5, 0, ['.#..#', '#..#.', '.#..#'], { '#': W[3] });
+    ellipse(ctx, 1, 5, 14, 6, W[4]);
+    ellipse(ctx, 2, 6, 12, 4, PAL.orange[2]);
+    ellipse(ctx, 3, 6, 6, 2, PAL.orange[3]);
+    px(ctx, 9, 7, G[3]);
+    px(ctx, 6, 8, PAL.orange[1]);
+    // bowl body
+    rect(ctx, 2, 9, 12, 2, W[3]);
+    ellipse(ctx, 2, 9, 12, 6, W[3]);
+    ellipse(ctx, 4, 12, 8, 3, W[1]);
+    hline(ctx, 2, 10, 12, B[3]);
+    // spoon
+    rect(ctx, 11, 3, 1, 4, PAL.metal[4]);
+  },
+  plates: (ctx) => {
+    for (let i = 0; i < 4; i++) {
+      const y = 11 - i * 2;
+      ellipse(ctx, 1, y, 14, 4, W[1]);
+      ellipse(ctx, 1, y - 1, 14, 4, W[3]);
+    }
+    ellipse(ctx, 1, 4, 14, 5, W[4]);
+    ellipse(ctx, 4, 5, 8, 3, W[2]);
+    hline(ctx, 3, 5, 2, B[3]);
+    hline(ctx, 11, 7, 2, B[3]);
+  },
+  'white-shirt': (ctx) => shirtIcon(ctx, W, false),
+  'pink-shirt': (ctx) => shirtIcon(ctx, PAL.pink, false),
+  'red-sock': (ctx) => {
+    sprite(ctx, 4, 2, ['#####.', '#####.', '#####.', '#####.', '#####.', '######', '#######', '.######', '..####.'], {
+      '#': R[2],
+    });
+    hline(ctx, 4, 2, 5, W[4]);
+    hline(ctx, 4, 3, 5, W[3]);
+    vline(ctx, 4, 4, 5, R[3]);
+    hline(ctx, 7, 10, 3, R[1]);
+    px(ctx, 9, 8, R[4]);
+    px(ctx, 6, 7, R[1]);
+  },
+  banknote: (ctx) => {
+    const g = ['#2a4a32', '#3c6a46', '#5a9466', '#8ac08e', '#c4e6b8'];
+    rect(ctx, 1, 4, 14, 8, g[3]);
+    hline(ctx, 1, 4, 14, g[4]);
+    hline(ctx, 1, 11, 14, g[1]);
+    rect(ctx, 2, 5, 12, 6, g[2]);
+    ellipse(ctx, 9, 5, 5, 6, g[3]);
+    ellipse(ctx, 10, 6, 3, 4, g[1]);
+    drawPixelText(ctx, '₹', 3, 6, g[4]);
+    px(ctx, 13, 5, g[4]);
+    px(ctx, 2, 10, g[4]);
+  },
+  coins: (ctx) => {
+    const c = Y;
+    for (let i = 0; i < 3; i++) {
+      ellipse(ctx, 1, 12 - i * 2, 9, 4, c[1]);
+      ellipse(ctx, 1, 11 - i * 2, 9, 4, c[2]);
+    }
+    ellipse(ctx, 1, 6, 9, 4, c[3]);
+    px(ctx, 3, 7, c[4]);
+    drawCoin(ctx, 4, 2);
+  },
+  detergent: (ctx) => {
+    const b = B;
+    rect(ctx, 3, 3, 9, 11, b[2]);
+    vline(ctx, 3, 3, 11, b[3]);
+    vline(ctx, 11, 3, 11, b[1]);
+    hline(ctx, 3, 13, 9, b[0]);
+    // cap + handle
+    rect(ctx, 5, 1, 3, 2, R[2]);
+    hline(ctx, 5, 1, 3, R[3]);
+    sprite(ctx, 9, 1, ['###', '#.#', '###'], { '#': b[2] });
+    // label with bubbles
+    rect(ctx, 4, 6, 7, 5, W[4]);
+    px(ctx, 5, 8, b[3]);
+    px(ctx, 7, 7, b[3]);
+    px(ctx, 8, 9, b[4]);
+    px(ctx, 9, 7, PAL.teal[3]);
+  },
+  'clothes-pile': (ctx) => {
+    ellipse(ctx, 1, 6, 14, 9, B[2]);
+    ellipse(ctx, 2, 5, 8, 6, R[2]);
+    ellipse(ctx, 3, 5, 5, 3, R[3]);
+    ellipse(ctx, 8, 7, 7, 6, Y[3]);
+    ellipse(ctx, 9, 7, 4, 3, Y[4]);
+    rect(ctx, 2, 12, 5, 2, PAL.pink[3]);
+    hline(ctx, 3, 14, 10, B[1]);
+    px(ctx, 6, 9, R[1]);
+  },
+  'cooking-pot': (ctx) => {
+    const m = PAL.metal;
+    ellipse(ctx, 2, 4, 12, 4, m[4]);
+    ellipse(ctx, 3, 5, 10, 2, m[1]);
+    rect(ctx, 2, 6, 12, 7, m[3]);
+    vline(ctx, 3, 6, 7, m[4]);
+    vline(ctx, 13, 6, 7, m[1]);
+    ellipse(ctx, 2, 10, 12, 5, m[3]);
+    hline(ctx, 4, 14, 8, m[1]);
+    // handles + lid knob
+    rect(ctx, 0, 6, 2, 2, OUTLINE);
+    rect(ctx, 14, 6, 2, 2, OUTLINE);
+    hline(ctx, 2, 8, 12, m[2]);
+    px(ctx, 7, 3, OUTLINE);
+    px(ctx, 8, 3, OUTLINE);
+  },
 };
+
+function shirtIcon(ctx: Ctx, c: readonly string[], stains: boolean) {
+  sprite(
+    ctx,
+    1,
+    2,
+    [
+      '...##..##...',
+      '.####..####.',
+      '############',
+      '############',
+      '##.######.##',
+      '...######...',
+      '...######...',
+      '...######...',
+      '...######...',
+      '...######...',
+      '...######...',
+    ],
+    { '#': c[3] },
+  );
+  hline(ctx, 6, 2, 2, c[1]);
+  vline(ctx, 9, 7, 6, c[2]);
+  hline(ctx, 4, 12, 6, c[2]);
+  vline(ctx, 2, 4, 3, c[4]);
+  vline(ctx, 4, 7, 5, c[4]);
+  // collar + buttons
+  px(ctx, 6, 3, c[4]);
+  px(ctx, 7, 3, c[4]);
+  for (const y of [6, 8, 10]) px(ctx, 7, y, c[1]);
+  if (stains) px(ctx, 6, 7, '#8a6a3a');
+}
 
 function genericBox(ctx: Ctx) {
   const k = PAL.cork;

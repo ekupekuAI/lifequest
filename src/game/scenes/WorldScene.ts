@@ -8,7 +8,7 @@ import { TILE_INDEX, type TileName } from '../art/tiles';
 import { sfx } from '../../core/sfx';
 
 export const T = 16;
-export const SCENE_FOR: Record<LocationId, string> = { home: 'Home', town: 'Town', grocery: 'Store', clinic: 'Clinic' };
+export const SCENE_FOR: Record<LocationId, string> = { home: 'Home', town: 'Town', grocery: 'Store', clinic: 'Clinic', city: 'City', library: 'Library' };
 
 export interface PropSpec {
   key: string | ((s: GameState) => string);
@@ -121,6 +121,8 @@ export abstract class WorldScene extends Phaser.Scene {
   protected lockMovement = false;
   protected mapW = 0;
   protected mapH = 0;
+  protected guide!: Phaser.GameObjects.Graphics;
+  protected doorBlockedAt = 0;
 
   abstract buildConfig(): WorldConfig;
   abstract populate(): void;
@@ -132,6 +134,7 @@ export abstract class WorldScene extends Phaser.Scene {
   create() {
     // scene instances are reused between visits: drop references to last visit's objects
     this.night = undefined as unknown as Phaser.GameObjects.Rectangle;
+    this.guide = undefined as unknown as Phaser.GameObjects.Graphics;
     this.transitioning = false;
     this.dyn = [];
     this.interactables = [];
@@ -156,9 +159,9 @@ export abstract class WorldScene extends Phaser.Scene {
     this.scale.on('resize', this.onResize, this);
     this.unsub.push(store.bus.on('fx', (fx) => this.spawnFx(fx.kind, fx.target)));
     this.unsub.push(
-      store.bus.on('scene', ({ goto }) => {
-        if (goto !== this.cfg.location) this.goTo(goto, 'default', true);
-        else this.scene.restart({ spawn: 'default' });
+      store.bus.on('scene', ({ goto, spawn }) => {
+        if (goto !== this.cfg.location) this.goTo(goto, spawn ?? 'default', !spawn);
+        else this.scene.restart({ spawn: spawn ?? 'default' });
       }),
     );
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
@@ -167,6 +170,7 @@ export abstract class WorldScene extends Phaser.Scene {
       this.scale.off('resize', this.onResize, this);
       store.setUI({ prompt: null });
     });
+    this.guide = this.add.graphics().setDepth(19000);
     this.cameras.main.fadeIn(250, 0, 0, 0);
     this.syncDynamic();
     this.afterCreate();
@@ -367,6 +371,7 @@ export abstract class WorldScene extends Phaser.Scene {
     this.updateNpcs(delta);
     this.updateFocus();
     this.checkDoors(moving);
+    this.drawGuide();
     this.syncTimer += delta;
     if (this.syncTimer > 150) {
       this.syncTimer = 0;
@@ -374,6 +379,61 @@ export abstract class WorldScene extends Phaser.Scene {
       this.updateLighting();
     }
     this.tick(delta);
+  }
+
+  /** Where a door that leads to `to` is, if this scene has one. */
+  protected doorTo(to: LocationId): { x: number; y: number } | null {
+    const d = this.doors.find((x) => x.to === to);
+    return d ? { x: d.x, y: d.y } : null;
+  }
+
+  /** Bouncing guide arrow toward the current objective (or the exit that leads to it). */
+  private drawGuide() {
+    const g = this.guide;
+    if (!g) return;
+    g.clear();
+    const t = store.currentTarget();
+    if (!t || store.blocking) return;
+    let pt: { x: number; y: number } | null = null;
+    if (t.location === this.cfg.location) {
+      const it = t.target ? this.interactables.find((i) => i.id === t.target && (!i.visible || i.visible(store.state))) : undefined;
+      if (it) pt = { x: it.x, y: it.y - 4 };
+    } else if (t.via) pt = this.doorTo(t.via) ?? this.extraRoute(t.via);
+    if (!pt) return;
+    const cam = this.cameras.main;
+    const view = cam.worldView;
+    const bob = Math.sin(this.time.now / 180) * 2;
+    const near = Phaser.Math.Distance.Between(this.player.x, this.player.y, pt.x, pt.y) < 26;
+    if (near) return;
+    const inView = pt.x > view.x + 6 && pt.x < view.right - 6 && pt.y > view.y + 10 && pt.y < view.bottom - 6;
+    g.fillStyle(0xf2a541, 1);
+    g.lineStyle(1, 0x1b1325, 1);
+    if (inView) {
+      const y = pt.y - 22 + bob;
+      g.fillTriangle(pt.x - 5, y, pt.x + 5, y, pt.x, y + 6);
+      g.strokeTriangle(pt.x - 5, y, pt.x + 5, y, pt.x, y + 6);
+      return;
+    }
+    // off-screen: arrow on the screen edge pointing toward the target
+    const cx = view.centerX;
+    const cy = view.centerY;
+    const ang = Math.atan2(pt.y - cy, pt.x - cx);
+    const rx = view.width / 2 - 10;
+    const ry = view.height / 2 - 12;
+    const k = Math.min(rx / Math.abs(Math.cos(ang) || 1e-6), ry / Math.abs(Math.sin(ang) || 1e-6));
+    const ax = cx + Math.cos(ang) * (k + bob);
+    const ay = cy + Math.sin(ang) * (k + bob);
+    const p = (a: number, r: number) => ({ x: ax + Math.cos(a) * r, y: ay + Math.sin(a) * r });
+    const tip = p(ang, 6);
+    const l = p(ang + 2.5, 6);
+    const r = p(ang - 2.5, 6);
+    g.fillTriangle(tip.x, tip.y, l.x, l.y, r.x, r.y);
+    g.strokeTriangle(tip.x, tip.y, l.x, l.y, r.x, r.y);
+  }
+
+  /** Scenes can expose non-door routes (e.g. the bus stop) for the guide arrow. */
+  protected extraRoute(_to: LocationId): { x: number; y: number } | null {
+    return null;
   }
 
   /** scene-specific per-frame hook */
@@ -459,6 +519,16 @@ export abstract class WorldScene extends Phaser.Scene {
     const py = this.player.y - 2;
     for (const d of this.doors) {
       if (px > d.x - d.w / 2 && px < d.x + d.w / 2 && py > d.y - d.h / 2 && py < d.y + d.h / 2) {
+        const gate = store.canEnter(d.to);
+        if (!gate.ok) {
+          // step back out of the doorway so the check doesn't repeat every frame
+          this.player.body.reset(this.player.x, this.player.y + (d.y < this.player.y ? 6 : -6));
+          if (gate.reason && this.time.now - this.doorBlockedAt > 2500) {
+            this.doorBlockedAt = this.time.now;
+            store.toast(gate.reason, 'bad');
+          }
+          return;
+        }
         this.goTo(d.to, d.spawn);
         return;
       }

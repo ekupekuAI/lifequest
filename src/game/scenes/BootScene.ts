@@ -8,12 +8,13 @@ import type { Appearance, HairStyle } from '../../domain/types';
 import { drawTileset } from '../art/tiles';
 import { PROPS, drawProp } from '../art/props';
 import { drawItemIcon } from '../art/items';
-import { drawFx } from '../art/fx';
+import { drawFx, FX_KEYS } from '../art/fx';
+import { setSignText } from '../art/signs';
+import { region } from '../../domain/region';
 import { drawCharacterSheet, kindForRole, FRAME_W, FRAME_H, type CharKind } from '../art/characters';
 import { SCENE_FOR } from './WorldScene';
 import { mulberry32 } from '../../core/systems';
 
-const FX = ['heart', 'cloud', 'sparkle', 'coin', 'exclaim', 'prompt', 'shadow', 'raindrop', 'zzz'];
 const DIRS = ['down', 'left', 'right', 'up'] as const;
 
 export class BootScene extends Phaser.Scene {
@@ -43,10 +44,12 @@ export class BootScene extends Phaser.Scene {
   }
 
   create() {
+    // region-specific shop signs must be set before props are rasterised
+    setSignText({ kiosk: region().words.kioskSign });
     this.addCanvas('tiles', drawTileset());
     for (const key of Object.keys(PROPS)) this.addCanvas(key, drawProp(key));
     for (const id of Object.keys(ITEMS)) this.addCanvas(`item:${id}`, drawItemIcon(id));
-    for (const k of FX) this.addCanvas(`fx:${k}`, drawFx(k));
+    for (const k of FX_KEYS) this.addCanvas(`fx:${k}`, drawFx(k));
 
     for (const m of store.state.profile.members) this.addCharacter(m.role === 'player' ? 'char:player' : `char:${m.id}`, m.appearance, kindForRole(m.role));
     for (const [k, v] of Object.entries(NPC_LOOKS)) this.addCharacter(`char:npc:${k}`, v.appearance, v.kind ?? 'adult');

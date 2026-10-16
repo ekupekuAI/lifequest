@@ -37,6 +37,8 @@ import MissionBoard from './MissionBoard';
 import ParentDashboard from './ParentDashboard';
 import HelpModal, { ControlsList } from './HelpModal';
 import ConfirmModal from './ConfirmModal';
+import SettingsModal from './SettingsModal';
+import DaySummaryModal from './DaySummaryModal';
 
 function dismissTutorial() {
   store.state.tutorialSeen = true;
@@ -87,6 +89,10 @@ function ModalRouter({ touch }: { touch: boolean }) {
       return store.state.tutorialSeen ? <HelpModal /> : <Tutorial touch={touch} />;
     case 'confirm':
       return <ConfirmModal modal={m} />;
+    case 'settings':
+      return <SettingsModal />;
+    case 'day-summary':
+      return <DaySummaryModal day={m.day} />;
     default:
       return null;
   }
@@ -116,6 +122,8 @@ export default function GameScreen() {
         else if (!u.modal) store.openModal({ type: 'journal' });
       } else if (k === 'p' && !u.dialogue && !u.modal) {
         store.callHome();
+      } else if (k === 'h' && !u.dialogue && !u.modal && store.state.settings?.hints !== false) {
+        store.hint();
       }
     };
     window.addEventListener('keydown', onKey);

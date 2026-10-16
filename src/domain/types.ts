@@ -1,7 +1,42 @@
 // Shared domain model for LifeQuest. Everything here is plain data so it can be
 // saved, tested, and sent to Supabase without touching Phaser or React.
 
-export type LocationId = 'home' | 'town' | 'grocery' | 'clinic';
+export type LocationId = 'home' | 'town' | 'grocery' | 'clinic' | 'city' | 'library';
+
+export type { RegionId } from './region';
+import type { RegionId } from './region';
+
+export type Difficulty = 'easy' | 'normal' | 'hard';
+
+/** How a character sounds when their lines are spoken. */
+export interface VoiceProfile {
+  /** 0.5 – 2 (browser speech pitch) */
+  pitch: number;
+  /** 0.6 – 1.4 */
+  rate: number;
+  /** preferred voice type when picking a system voice */
+  kind: 'female' | 'male' | 'child' | 'elder-female' | 'elder-male' | 'neutral';
+  /** exact system voice chosen by the player (voiceURI), if any */
+  voiceURI?: string;
+}
+
+export interface Settings {
+  region: RegionId;
+  difficulty: Difficulty;
+  voice: { mode: 'speech' | 'babble' | 'off'; volume: number; narrator: boolean };
+  textScale: number; // 1, 1.15, 1.3
+  colorSafe: boolean;
+  hints: boolean; // show the objective arrow & hint button
+}
+
+export const DEFAULT_SETTINGS: Settings = {
+  region: 'in',
+  difficulty: 'normal',
+  voice: { mode: 'speech', volume: 0.9, narrator: false },
+  textScale: 1,
+  colorSafe: false,
+  hints: true,
+};
 
 export type Role =
   | 'mother'
@@ -56,6 +91,7 @@ export interface FamilyMember {
   appearance: Appearance;
   /** 0..100 relationship / trust with the player */
   trust: number;
+  voice?: VoiceProfile;
 }
 
 export interface Profile {
@@ -109,6 +145,8 @@ export interface DecisionLog {
   text: string;
   consequence: string;
   tone: 'good' | 'neutral' | 'bad';
+  /** the other options the player could have picked, with what would have happened */
+  alternatives?: { label: string; outcome: string; tone: 'good' | 'neutral' | 'bad' }[];
 }
 
 export type FlagValue = number | boolean | string;
@@ -242,8 +280,13 @@ export interface GameState {
   queues: Record<string, QueueState>;
   /** true while the player stands in the queue at the current location */
   inQueue: boolean;
-  receipts: { at: number; lines: { id: string; name: string; qty: number; price: number }[]; total: number; store: string }[];
+  receipts: { at: number; day?: number; lines: { id: string; name: string; qty: number; price: number; returned?: number }[]; total: number; store: string }[];
   tutorialSeen: boolean;
   /** JSON snapshot taken when the current mission started (Restart / Retry) */
   rewind?: string;
+  settings: Settings;
+  /** money set aside in the piggy bank toward a goal */
+  savings: { balance: number; goal: string; target: number };
+  /** end-of-day reflections written by the player */
+  reflections: { day: number; wentWell: string; improve: string; mood: string }[];
 }

@@ -2,7 +2,7 @@
 
 import { PAL, OUTLINE, SKY, type Ramp } from './palette';
 import { type Ctx, px, rect, hline, vline, ellipse, hash2, mix, dither } from './draw';
-import { drawPixelText, measurePixelText } from './pixelFont';
+import { drawFittedText } from './signs';
 
 /**
  * Furniture block: lighter top surface (topH rows) and a front face below.
@@ -171,11 +171,8 @@ export function signBoard(
   hline(ctx, x, y + h - 1, w, bg[0]);
   vline(ctx, x, y, h, bg[3]);
   vline(ctx, x + w - 1, y, h, bg[1]);
-  const tw = measurePixelText(text);
-  const tx = x + Math.floor((w - tw) / 2);
-  const ty = y + Math.floor((h - 5) / 2);
-  if (shadow) drawPixelText(ctx, text, tx + 1, ty + 1, shadow);
-  drawPixelText(ctx, text, tx, ty, fg);
+  // long (localised) names shrink spacing, wrap to two lines or truncate
+  drawFittedText(ctx, text, x + 1, y, w - 2, h, fg, shadow, 1);
 }
 
 /** Panel door with knob and step. */

@@ -2,14 +2,21 @@ import { useEffect, useRef, useState } from 'react';
 import { store } from '../core/store';
 import { isTypingTarget, prefersReducedMotion, useSnap } from './hooks';
 import { Portrait } from './art';
+import { speakerKey, voice } from '../core/voice';
+import { toggleVoiceMute, useDisplaySettings, useVoiceState } from './SettingsModal';
+import './voice.css';
 
 const CHAR_MS = 12;
 const GUARD_MS = 180;
 
 export default function DialoguePanel() {
-  const { ui } = useSnap();
+  const { ui, state } = useSnap();
+  useDisplaySettings();
+  useVoiceState();
   const line = ui.dialogue?.[0] ?? null;
   const text = line?.text ?? '';
+  const voiceMode = state.settings?.voice?.mode ?? 'off';
+  const spokenRef = useRef<{ line: unknown; at: number } | null>(null);
   const [shown, setShown] = useState(0);
   const complete = shown >= text.length;
   const shownAt = useRef(0);
@@ -41,6 +48,20 @@ export default function DialoguePanel() {
     return () => cancelAnimationFrame(raf);
   }, [line, text, ui.dialogueOpenedAt]);
 
+  // speak each new line once; a new line, closing, or unmounting cancels the previous one
+  useEffect(() => {
+    if (!line) {
+      spokenRef.current = null;
+      voice.stop();
+      return;
+    }
+    const prev = spokenRef.current;
+    if (prev && prev.line === line && prev.at === ui.dialogueOpenedAt) return;
+    spokenRef.current = { line, at: ui.dialogueOpenedAt };
+    voice.speak(line.text, line.portrait, { speaker: line.speaker || undefined });
+  }, [line, ui.dialogueOpenedAt]);
+  useEffect(() => () => voice.stop(), []);
+
   const advance = () => {
     if (!ref.current.complete) return setShown(Number.MAX_SAFE_INTEGER);
     if (!ref.current.hasChoices) store.advanceDialogue();
@@ -60,7 +81,7 @@ export default function DialoguePanel() {
       }
       const t = e.target as HTMLElement | null;
       // let a focused choice button handle Enter/Space natively
-      if (isAdvance && k !== 'e' && k !== 'E' && t?.closest?.('.choice')) return;
+      if (isAdvance && k !== 'e' && k !== 'E' && t?.closest?.('.choice, .dlg-tool')) return;
       e.preventDefault();
       if (num >= 0) {
         if (ref.current.hasChoices && ref.current.complete) pick(num);
@@ -75,6 +96,33 @@ export default function DialoguePanel() {
   if (!line) return null;
   const narration = !line.speaker;
   const choices = line.choices ?? [];
+  const talking = voice.speaking && voice.speakingKey === speakerKey(line.portrait, line.speaker || undefined);
+  const muted = voiceMode === 'off';
+  const tools = (
+    <div className="dlg-tools" onClick={(e) => e.stopPropagation()}>
+      {!muted && (
+        <button
+          type="button"
+          className="dlg-tool"
+          aria-label="Replay this line"
+          title="Replay line"
+          onClick={() => voice.speak(line.text, line.portrait, { force: true, speaker: line.speaker || undefined })}
+        >
+          🔊
+        </button>
+      )}
+      <button
+        type="button"
+        className="dlg-tool"
+        aria-pressed={muted}
+        aria-label={muted ? 'Turn voices on' : 'Mute voices'}
+        title={muted ? 'Voices off — click to turn on' : 'Mute voices'}
+        onClick={toggleVoiceMute}
+      >
+        {muted ? '🔇' : '🔈'}
+      </button>
+    </div>
+  );
   return (
     <section
       className={`panel dlg ${narration ? 'narration' : ''}`}
@@ -84,12 +132,31 @@ export default function DialoguePanel() {
       onClick={advance}
     >
       {line.portrait && (
-        <div className="dlg-portrait">
+        <div className={`dlg-portrait ${talking ? 'speaking' : ''}`}>
           <Portrait id={line.portrait} size={72} alt={line.speaker} />
+          {talking && (
+            <span className="vs-wave" aria-hidden>
+              <i />
+              <i />
+              <i />
+            </span>
+          )}
         </div>
       )}
       <div className="dlg-main">
-        {!narration && <div className="dlg-name">{line.speaker}</div>}
+        <div className="dlg-head">
+          {!narration ? (
+            <div className="dlg-name">
+              {line.speaker}
+              {talking && !line.portrait && <span className="vs-dot" aria-hidden />}
+            </div>
+          ) : (
+            <span className="dlg-name" aria-hidden>
+              {talking && <span className="vs-dot" />}
+            </span>
+          )}
+          {tools}
+        </div>
         <div className="dlg-text scroll">
           <span>{text.slice(0, shown)}</span>
           <span aria-hidden style={{ visibility: 'hidden' }}>

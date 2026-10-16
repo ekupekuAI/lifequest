@@ -1,4 +1,5 @@
 import type { ItemDef } from './types';
+import { formatMoneyIn } from './region';
 
 export const ITEMS: Record<string, ItemDef> = {
   // groceries
@@ -10,13 +11,25 @@ export const ITEMS: Record<string, ItemDef> = {
   potatoes: { id: 'potatoes', name: 'Potatoes (1kg bag)', weight: 2, category: 'grocery' },
   'baby-potatoes': { id: 'baby-potatoes', name: 'Premium baby potatoes', weight: 1.5, category: 'grocery' },
   chocolate: { id: 'chocolate', name: 'Chocolate bar', weight: 0.3, category: 'grocery' },
-  chips: { id: 'chips', name: 'Masala chips', weight: 0.3, category: 'grocery' },
+  chips: { id: 'chips', name: 'Chips', weight: 0.3, category: 'grocery' },
+  'milk-tetra-old': { id: 'milk-tetra-old', name: 'Toned milk tetra (expires today)', weight: 1, category: 'grocery' },
+  carrot: { id: 'carrot', name: 'Carrots', weight: 0.5, category: 'grocery' },
+  onion: { id: 'onion', name: 'Onion', weight: 0.3, category: 'grocery' },
+  'chopped-veg': { id: 'chopped-veg', name: 'Chopped vegetables', weight: 0, category: 'chore' },
+  'soup-bowl': { id: 'soup-bowl', name: 'Bowl of soup', weight: 0, category: 'chore' },
+  plates: { id: 'plates', name: 'Plates & spoons', weight: 0, category: 'chore' },
+  'cooking-pot': { id: 'cooking-pot', name: 'Cooking pot', weight: 0, category: 'chore' },
   'cold-drink': { id: 'cold-drink', name: 'Cold drink', weight: 1, category: 'grocery' },
   bread: { id: 'bread', name: 'Bread loaf', weight: 0.8, category: 'grocery' },
   // gear
   'cloth-bag': { id: 'cloth-bag', name: 'Cloth shopping bag', weight: 0, category: 'gear' },
   umbrella: { id: 'umbrella', name: 'Umbrella', weight: 0.5, category: 'gear' },
   'paper-bag': { id: 'paper-bag', name: 'Paper bag', weight: 0, category: 'gear' },
+  'house-keys': { id: 'house-keys', name: 'House keys', weight: 0, category: 'gear' },
+  'bus-ticket': { id: 'bus-ticket', name: 'Bus ticket (Route 12)', weight: 0, category: 'gear' },
+  'library-book': { id: 'library-book', name: 'Library book (due today)', weight: 0.5, category: 'gear' },
+  letter: { id: 'letter', name: 'Letter to post', weight: 0, category: 'gear' },
+  parcel: { id: 'parcel', name: 'Parcel', weight: 1, category: 'gear' },
   'health-card': { id: 'health-card', name: "Grandparent's health card", weight: 0, category: 'gear' },
   'appointment-slip': { id: 'appointment-slip', name: 'Appointment slip', weight: 0, category: 'gear' },
   // chores (held in hands)
@@ -34,6 +47,11 @@ export const ITEMS: Record<string, ItemDef> = {
   'empty-bottle': { id: 'empty-bottle', name: 'Water bottle (empty)', weight: 0, category: 'school' },
   'sports-shoes': { id: 'sports-shoes', name: 'Sports shoes', weight: 0, category: 'school' },
   comic: { id: 'comic', name: 'Comic book', weight: 0, category: 'school' },
+  'white-shirt': { id: 'white-shirt', name: 'White clothes', weight: 0, category: 'chore' },
+  'pink-shirt': { id: 'pink-shirt', name: 'Pink-stained shirt', weight: 0, category: 'chore' },
+  'red-sock': { id: 'red-sock', name: 'Red sock', weight: 0, category: 'chore' },
+  'clothes-pile': { id: 'clothes-pile', name: 'Coloured clothes', weight: 0, category: 'chore' },
+  detergent: { id: 'detergent', name: 'Detergent', weight: 0, category: 'chore' },
 };
 
 export function itemName(id: string): string {
@@ -45,6 +63,8 @@ export interface ShopProduct {
   price: number;
   stockKey?: string; // world flag holding stock count
   tag?: string;
+  /** multi-buy offer */
+  deal?: '3for2';
 }
 
 export interface Shelf {
@@ -61,6 +81,7 @@ export const GROCERY_SHELVES: Shelf[] = [
     products: [
       { item: 'milk-packet', price: 30, stockKey: 'stock.grocery.milk-packet' },
       { item: 'milk-tetra', price: 38, tag: 'Lasts longer' },
+      { item: 'milk-tetra-old', price: 26, tag: 'Expires today · 30% off' },
       { item: 'milk-flavoured', price: 45, tag: 'New!' },
     ],
   },
@@ -68,7 +89,9 @@ export const GROCERY_SHELVES: Shelf[] = [
     id: 'shelf-veg',
     label: 'Fresh vegetables',
     products: [
-      { item: 'tomato', price: 12, tag: 'per piece' },
+      { item: 'tomato', price: 12, tag: 'each' },
+      { item: 'carrot', price: 20, tag: '500 g' },
+      { item: 'onion', price: 8, tag: 'each' },
       { item: 'cherry-tomato', price: 40, tag: 'Imported' },
       { item: 'potatoes', price: 45 },
       { item: 'baby-potatoes', price: 80, tag: 'Premium' },
@@ -79,7 +102,7 @@ export const GROCERY_SHELVES: Shelf[] = [
     label: 'Snacks & drinks',
     products: [
       { item: 'chocolate', price: 20, tag: 'Offer!' },
-      { item: 'chips', price: 25 },
+      { item: 'chips', price: 25, deal: '3for2', tag: '3 for 2!' },
       { item: 'cold-drink', price: 40 },
     ],
   },
@@ -116,6 +139,7 @@ export function groceryPrice(item: string): number | undefined {
   return undefined;
 }
 
+/** Format an amount already in the current region's currency. */
 export function formatMoney(n: number): string {
-  return `₹${Math.round(n)}`;
+  return formatMoneyIn(n);
 }

@@ -1,5 +1,6 @@
 import type { GameStore } from '../core/store';
 import { formatMoney } from '../domain/items';
+import { words } from '../domain/region';
 
 /** Replace {assigner} {sibling} {player} {budget} tokens in mission text. */
 export function fmt(s: GameStore, text: string, opts: { assignerId?: string; budget?: number | null } = {}): string {
@@ -7,7 +8,7 @@ export function fmt(s: GameStore, text: string, opts: { assignerId?: string; bud
   const sibling = s.memberByRole('younger-sibling')?.name ?? 'your sibling';
   const budget = opts.budget ?? s.state.run?.budget ?? null;
   const grand = s.memberByRole('grandparent')?.name ?? 'Grandma';
-  return text
+  return words(text)
     .replace(/\{assigner\}/g, assigner)
     .replace(/\{sibling\}/g, sibling)
     .replace(/\{player\}/g, s.player?.name ?? 'you')

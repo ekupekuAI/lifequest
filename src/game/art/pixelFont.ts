@@ -60,6 +60,10 @@ const G: Record<string, string[]> = {
   '*': ['...', '#.#', '.#.', '#.#', '...'],
   '<': ['..#', '.#.', '#..', '.#.', '..#'],
   '>': ['#..', '.#.', '..#', '.#.', '#..'],
+  '→': ['.....', '...#.', '#####', '...#.', '.....'],
+  '←': ['.....', '.#...', '#####', '.#...', '.....'],
+  '♪': ['.##', '.#.', '.#.', '##.', '##.'],
+  '"': ['#.#', '#.#', '...', '...', '...'],
 };
 
 const FALLBACK = ['###', '#.#', '#.#', '#.#', '###'];
@@ -70,17 +74,28 @@ function glyph(ch: string): string[] {
   return G[ch] ?? G[ch.toUpperCase()] ?? FALLBACK;
 }
 
-/** Width in pixels of `text` (1px letter spacing, no trailing gap). */
-export function measurePixelText(text: string, scale = 1): number {
+/**
+ * Width in pixels of `text` (no trailing gap). `gap` is the letter spacing in
+ * output pixels; defaults to one font pixel (= scale).
+ */
+export function measurePixelText(text: string, scale = 1, gap = scale): number {
   const chars = Array.from(text.toUpperCase());
   if (!chars.length) return 0;
   let w = 0;
-  for (const ch of chars) w += glyph(ch)[0].length + 1;
-  return (w - 1) * scale;
+  for (const ch of chars) w += glyph(ch)[0].length * scale + gap;
+  return w - gap;
 }
 
 /** Draw uppercase pixel text with its top-left at (x, y). Returns the width drawn. */
-export function drawPixelText(ctx: Ctx, text: string, x: number, y: number, color: string, scale = 1): number {
+export function drawPixelText(
+  ctx: Ctx,
+  text: string,
+  x: number,
+  y: number,
+  color: string,
+  scale = 1,
+  gap = scale,
+): number {
   ctx.fillStyle = color;
   let cx = Math.round(x);
   const cy = Math.round(y);
@@ -89,9 +104,9 @@ export function drawPixelText(ctx: Ctx, text: string, x: number, y: number, colo
     for (let j = 0; j < g.length; j++)
       for (let i = 0; i < g[j].length; i++)
         if (g[j][i] === '#') ctx.fillRect(cx + i * scale, cy + j * scale, scale, scale);
-    cx += (g[0].length + 1) * scale;
+    cx += g[0].length * scale + gap;
   }
-  return cx - Math.round(x) - scale;
+  return cx - Math.round(x) - gap;
 }
 
 /** Draw text horizontally centred on `cx`. */

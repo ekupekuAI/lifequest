@@ -4,6 +4,8 @@ import type { ChallengeDef } from './types';
 import type { GameStore } from '../core/store';
 import { NPC_LOOKS } from '../domain/family';
 import { playerIndex } from '../core/systems';
+import { formatMoney } from '../domain/items';
+import { money, words } from '../domain/region';
 
 const assignerName = (s: GameStore) => s.assigner()?.name ?? 'home';
 const sibling = (s: GameStore) => s.memberByRole('younger-sibling');
@@ -23,6 +25,7 @@ export const CHALLENGES: Record<string, ChallengeDef> = {
     options: [
       {
         id: 'ask-alt',
+        whatIf: 'Get a sensible substitute quickly; +Communication',
         label: 'Ask the helper for a good alternative',
         tone: 'good',
         skills: { communication: 5, problem: 5 },
@@ -32,11 +35,12 @@ export const CHALLENGES: Record<string, ChallengeDef> = {
           s.bump('problem', 10);
           s.spendTime(1);
           setTimeout(() => s.openModal({ type: 'shelf', shelfId: 'shelf-dairy' }), 30);
-          return 'The helper suggests the toned milk tetra pack (₹38). It is plain milk in different packaging — a sensible substitute.';
+          return `The helper suggests the toned milk tetra pack (${formatMoney(money(38))}). It is plain milk in different packaging — a sensible substitute.`;
         },
       },
       {
         id: 'call',
+        whatIf: '2 min slower, but no guesswork; +Communication, +trust',
         label: `Call home to check`,
         hint: 'Takes 2 minutes',
         tone: 'good',
@@ -53,7 +57,7 @@ export const CHALLENGES: Record<string, ChallengeDef> = {
                 {
                   speaker: assignerName(s),
                   portrait: a?.id,
-                  text: 'Thanks for calling! A tetra pack of plain milk is fine. Or check Sharma uncle\'s store across the road — he usually has packets. No milkshakes, okay?',
+                  text: words("Thanks for calling! A tetra pack of plain milk is fine. Or check {shopkeeper}'s shop across the road — they usually have packets. No milkshakes, okay?"),
                 },
               ]),
             30,
@@ -63,6 +67,7 @@ export const CHALLENGES: Record<string, ChallengeDef> = {
       },
       {
         id: 'other-shop',
+        whatIf: 'Extra walking time, but you might find packets',
         label: 'Try another shop (Sharma General Store)',
         tone: 'neutral',
         skills: { problem: 5, planning: 3 },
@@ -74,6 +79,7 @@ export const CHALLENGES: Record<string, ChallengeDef> = {
       },
       {
         id: 'skip',
+        whatIf: 'No milk for the family; lower Problem-solving',
         label: 'Skip the milk',
         tone: 'bad',
         apply: (s) => {
@@ -98,6 +104,7 @@ export const CHALLENGES: Record<string, ChallengeDef> = {
     options: [
       {
         id: 'polite',
+        whatIf: 'Cutter goes to the back; +Communication',
         label: '"Excuse me, there\'s a queue — the line starts back there."',
         tone: 'good',
         skills: { communication: 8, responsibility: 5 },
@@ -109,6 +116,7 @@ export const CHALLENGES: Record<string, ChallengeDef> = {
       },
       {
         id: 'cashier',
+        whatIf: 'Staff handle it; +Responsibility',
         label: 'Ask the cashier to handle it',
         tone: 'good',
         skills: { communication: 4, responsibility: 4 },
@@ -120,6 +128,7 @@ export const CHALLENGES: Record<string, ChallengeDef> = {
       },
       {
         id: 'silent',
+        whatIf: 'About 3 extra minutes of waiting; +Patience',
         label: 'Say nothing and keep waiting',
         tone: 'neutral',
         skills: { patience: 6 },
@@ -150,6 +159,7 @@ export const CHALLENGES: Record<string, ChallengeDef> = {
     options: [
       {
         id: 'let-ahead',
+        whatIf: 'About 1 min slower; +Empathy',
         label: '"Please, go ahead of me."',
         tone: 'good',
         skills: { empathy: 10, patience: 3 },
@@ -168,6 +178,7 @@ export const CHALLENGES: Record<string, ChallengeDef> = {
       },
       {
         id: 'stay',
+        whatIf: 'No delay; fair, but a kindness missed',
         label: 'Keep your place',
         tone: 'neutral',
         apply: () => 'That is fair — queues are first come, first served. Kindness is a choice, not a rule.',
@@ -180,28 +191,32 @@ export const CHALLENGES: Record<string, ChallengeDef> = {
     category: 'memory',
     title: 'Forgot the shopping bag',
     trigger: 'manual',
-    prompt: () => ({ speaker: NPC_LOOKS.cashier.name, portrait: 'npc:cashier', text: 'Did you bring a bag? Paper bags are ₹5 each.' }),
+    prompt: () => ({ speaker: NPC_LOOKS.cashier.name, portrait: 'npc:cashier', text: `Did you bring a bag? Paper bags are ${formatMoney(money(5))} each.` }),
     options: [
       {
         id: 'buy-bag',
-        label: 'Buy a paper bag (₹5)',
+        whatIf: 'Small fee added to your bill',
+        get label() {
+          return `Buy a paper bag (${formatMoney(money(5))})`;
+        },
         tone: 'neutral',
         skills: { budget: 2 },
         apply: (s) => {
-          s.world('bagFee', 5);
+          s.world('bagFee', money(5));
           s.flag('boughtBag', true);
-          return 'A ₹5 bag is small, but it adds up. Taking a reusable bag from home saves money and waste.';
+          return `A ${formatMoney(money(5))} bag is small, but it adds up. Taking a reusable bag from home saves money and waste.`;
         },
       },
       {
         id: 'hands',
+        whatIf: 'Save the fee, but you tire faster',
         label: 'Carry everything in my hands',
         tone: 'neutral',
         skills: { problem: 2 },
         apply: (s) => {
           s.world('carryingByHand', true);
           s.flag('carriedByHand', true);
-          return 'You saved ₹5, but carrying loose groceries makes you tire faster. Next time, remember the bag on the hook!';
+          return `You saved ${formatMoney(money(5))}, but carrying loose groceries makes you tire faster. Next time, remember the bag on the hook!`;
         },
       },
     ],
@@ -217,6 +232,7 @@ export const CHALLENGES: Record<string, ChallengeDef> = {
     options: [
       {
         id: 'umbrella',
+        whatIf: 'Stay dry, no delay; +Planning',
         label: 'Open the umbrella you brought',
         tone: 'good',
         available: (s) => s.hasItem('umbrella'),
@@ -230,6 +246,7 @@ export const CHALLENGES: Record<string, ChallengeDef> = {
       },
       {
         id: 'wait',
+        whatIf: '8 minutes lost, groceries stay dry',
         label: 'Wait under the shop awning until it eases (8 min)',
         tone: 'neutral',
         skills: { patience: 5, decisions: 3 },
@@ -241,6 +258,7 @@ export const CHALLENGES: Record<string, ChallengeDef> = {
       },
       {
         id: 'run',
+        whatIf: 'Save time, lose 15 energy',
         label: 'Hurry home in the rain',
         tone: 'neutral',
         skills: { decisions: 3 },
@@ -264,6 +282,7 @@ export const CHALLENGES: Record<string, ChallengeDef> = {
     options: [
       {
         id: 'precise',
+        whatIf: 'Right item first time; +Communication',
         label: '"One packet. Toned is fine — it\'s for tea at home."',
         tone: 'good',
         skills: { communication: 5 },
@@ -275,6 +294,7 @@ export const CHALLENGES: Record<string, ChallengeDef> = {
       },
       {
         id: 'unsure',
+        whatIf: 'Shopkeeper guesses for you',
         label: '"Umm… I\'m not sure. Whatever."',
         tone: 'neutral',
         apply: (s) => {
@@ -299,6 +319,7 @@ export const CHALLENGES: Record<string, ChallengeDef> = {
     options: [
       {
         id: 'help',
+        whatIf: '2 min, sibling trusts you more; +Empathy',
         label: 'Help right away (2 min)',
         tone: 'good',
         skills: { empathy: 8, decisions: 4 },
@@ -312,6 +333,7 @@ export const CHALLENGES: Record<string, ChallengeDef> = {
       },
       {
         id: 'promise',
+        whatIf: 'Short delay explained; small trust gain',
         label: '"Give me 2 minutes to finish, then I\'ll help."',
         tone: 'neutral',
         skills: { communication: 4, time: 3 },
@@ -324,6 +346,7 @@ export const CHALLENGES: Record<string, ChallengeDef> = {
       },
       {
         id: 'refuse',
+        whatIf: 'Sibling waits for medicine; trust drops',
         label: '"Not now, I\'m busy!"',
         tone: 'bad',
         apply: (s) => {
@@ -344,6 +367,7 @@ export const CHALLENGES: Record<string, ChallengeDef> = {
     options: [
       {
         id: 'think',
+        whatIf: 'Solved it yourself; +Problem-solving',
         label: 'Think: dishes go to the kitchen sink',
         tone: 'good',
         skills: { problem: 6 },
@@ -354,6 +378,7 @@ export const CHALLENGES: Record<string, ChallengeDef> = {
       },
       {
         id: 'ask',
+        whatIf: '1 min, certain answer; +Communication',
         label: 'Go ask where it belongs',
         tone: 'good',
         skills: { communication: 5 },
@@ -365,6 +390,7 @@ export const CHALLENGES: Record<string, ChallengeDef> = {
       },
       {
         id: 'hide',
+        whatIf: 'Looks tidy, but the mug is found later',
         label: 'Hide it in the wardrobe',
         tone: 'bad',
         apply: (s) => {
@@ -392,6 +418,7 @@ export const CHALLENGES: Record<string, ChallengeDef> = {
     options: [
       {
         id: 'explain',
+        whatIf: 'Misunderstanding cleared; +trust',
         label: '"I\'m packing them in your bag for art class tomorrow."',
         tone: 'good',
         skills: { communication: 8, empathy: 4 },
@@ -403,6 +430,7 @@ export const CHALLENGES: Record<string, ChallengeDef> = {
       },
       {
         id: 'snap',
+        whatIf: 'Works, but feelings are hurt',
         label: '"Relax! I\'m helping you, okay?!"',
         tone: 'neutral',
         apply: (s) => {
@@ -413,6 +441,7 @@ export const CHALLENGES: Record<string, ChallengeDef> = {
       },
       {
         id: 'give-up',
+        whatIf: 'Crayons stay unpacked; task harder',
         label: '"Fine, keep them."',
         tone: 'bad',
         apply: (s) => {
@@ -438,6 +467,7 @@ export const CHALLENGES: Record<string, ChallengeDef> = {
     options: [
       {
         id: 'go-home',
+        whatIf: 'Reliable but costs a trip; token keeps your place',
         label: 'Go home and bring the card',
         tone: 'neutral',
         skills: { responsibility: 4 },
@@ -448,6 +478,7 @@ export const CHALLENGES: Record<string, ChallengeDef> = {
       },
       {
         id: 'ask-alt',
+        whatIf: '5 min lookup, no trip home; +Communication',
         label: 'Ask if the record can be found another way',
         tone: 'good',
         skills: { communication: 6, problem: 6 },
@@ -456,6 +487,88 @@ export const CHALLENGES: Record<string, ChallengeDef> = {
           s.spendTime(5, 'Receptionist searched the records');
           s.bump('comm', 10);
           return 'The receptionist finds the record using the phone number. It took 5 minutes — asking politely opened a new option.';
+        },
+      },
+    ],
+  },
+
+  'wrong-change': {
+    id: 'wrong-change',
+    category: 'money',
+    title: 'Short change',
+    trigger: 'purchased',
+    when: (_s, ev) => ev.type === 'purchased' && ev.store === 'kiosk',
+    prompt: () => ({
+      speaker: NPC_LOOKS.sharma.name,
+      portrait: 'npc:sharma',
+      text: 'Here is your change! (A few coins drop into your hand. It feels a little light…)',
+    }),
+    options: [
+      {
+        id: 'count',
+        whatIf: 'You get the right change; +Budgeting',
+        label: 'Count the change and politely point out the mistake',
+        tone: 'good',
+        skills: { budget: 6, communication: 3 },
+        apply: (s) => {
+          s.bump('comm', 5);
+          return `You were short by ${formatMoney(money(10))}. "Oh! So sorry!" Counting change is a quick habit that protects your money.`;
+        },
+      },
+      {
+        id: 'ignore',
+        whatIf: 'You lose a little money without noticing',
+        label: 'Pocket it without counting',
+        tone: 'bad',
+        apply: (s) => {
+          s.pay(money(10), 'Short change (not counted)');
+          return `You walked away ${formatMoney(money(10))} short. Mistakes happen — counting your change catches them.`;
+        },
+      },
+      {
+        id: 'accuse',
+        whatIf: 'You get the money, but the shopkeeper is upset',
+        label: '"You are trying to cheat me!"',
+        tone: 'neutral',
+        apply: (s) => {
+          s.bump('comm', -10);
+          return 'You got your money back, but it was an honest mistake. Calmly pointing it out works just as well and keeps good relations.';
+        },
+      },
+    ],
+  },
+
+  'locked-out': {
+    id: 'locked-out',
+    category: 'memory',
+    title: 'Locked out',
+    trigger: 'manual',
+    prompt: () => ({ speaker: '', text: "You try the front door… it's locked! Your house keys are still hanging on the hook inside." }),
+    options: [
+      {
+        id: 'bell',
+        whatIf: 'Someone lets you in; small trust dip',
+        label: 'Ring the doorbell',
+        tone: 'neutral',
+        apply: (s) => {
+          s.world(`unlocked.${s.state.clock.day}`, true);
+          s.spendTime(1);
+          const who = s.memberByRole('grandparent', 'mother', 'father', 'guardian', 'older-sibling');
+          if (who) s.trust(who.id, -1);
+          setTimeout(() => s.bus.emit('scene', { goto: 'home', spawn: 'door' }), 40);
+          return words(`${who?.name ?? 'Someone'} opens the door: "Forgot your keys again, {endearment}?" Keep keys in the same place and check before leaving.`);
+        },
+      },
+      {
+        id: 'phone',
+        whatIf: '2 minutes on the phone, then you are let in',
+        label: 'Call home so someone opens up',
+        tone: 'neutral',
+        apply: (s) => {
+          s.world(`unlocked.${s.state.clock.day}`, true);
+          s.spendTime(2);
+          setTimeout(() => s.bus.emit('scene', { goto: 'home', spawn: 'door' }), 40);
+          return 'A quick call and the door opens. A checklist by the door (keys, bag, money) prevents this.';
         },
       },
     ],

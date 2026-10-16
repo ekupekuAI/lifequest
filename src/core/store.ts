@@ -2,6 +2,7 @@
 // Systems in ./systems.ts are pure; this class owns the state, applies them,
 // routes interactions to missions/challenges, and notifies subscribers.
 import type {
+  Settings,
   Assignment,
   DecisionLog,
   FamilyMember,
@@ -15,7 +16,9 @@ import type {
   Role,
   SkillId,
 } from '../domain/types';
-import { GUARDIAN_ROLES } from '../domain/types';
+import { DEFAULT_SETTINGS, GUARDIAN_ROLES } from '../domain/types';
+import { formatMoneyIn, money, region, setRegion, words } from '../domain/region';
+import { ALLOWANCE_BASE, DIFFICULTY, OPENING_HOURS, ROUTE_NEXT, SAVINGS_GOAL, hoursLabel, isOpenAt, scheduleFor } from '../domain/world';
 import { GROCERY_SHELVES, KIOSK_SHELF, findProduct, formatMoney, itemName } from '../domain/items';
 import { NPC_LOOKS } from '../domain/family';
 import {
@@ -39,7 +42,12 @@ import {
 } from './systems';
 import type { ChallengeDef, GameEvent, MissionDef } from '../missions/types';
 import { MISSIONS, getMission } from '../missions/registry';
-import { CHALLENGES } from '../missions/challenges';
+import { CHALLENGES as BASE_CHALLENGES } from '../missions/challenges';
+import { HOME_CHALLENGES } from '../missions/homeChallenges';
+import { TOWN_CHALLENGES } from '../missions/townChallenges';
+
+/** Every challenge the engine knows about (base library + home + town packs). */
+const CHALLENGES: Record<string, ChallengeDef> = { ...BASE_CHALLENGES, ...HOME_CHALLENGES, ...TOWN_CHALLENGES };
 import { EventBus } from './events';
 import { fmt } from '../missions/format';
 import { sfx } from './sfx';
@@ -73,7 +81,9 @@ export type Modal =
   | { type: 'board' }
   | { type: 'parent' }
   | { type: 'help' }
-  | { type: 'confirm'; text: string; yes: string; onYes: () => void };
+  | { type: 'confirm'; text: string; yes: string; onYes: () => void }
+  | { type: 'settings' }
+  | { type: 'day-summary'; day: number };
 
 export interface Toast {
   id: number;
@@ -107,13 +117,14 @@ export interface Snapshot {
 
 const SAVE_VERSION = 1 as const;
 
-export function freshState(profile: Profile, seed = Date.now() % 100000): GameState {
+export function freshState(profile: Profile, seed = Date.now() % 100000, settings: Settings = DEFAULT_SETTINGS): GameState {
+  const pocket = money(40);
   return {
     version: SAVE_VERSION,
     seed,
     profile,
     clock: { minutes: TIME_CONFIG.dayStart, day: 1 },
-    wallet: { balance: 40, ledger: [{ at: TIME_CONFIG.dayStart, amount: 40, label: 'Pocket money', balanceAfter: 40 }] },
+    wallet: { balance: pocket, ledger: [{ at: TIME_CONFIG.dayStart, amount: pocket, label: 'Pocket money', balanceAfter: pocket }] },
     inventory: { items: {}, capacity: 8 },
     hands: [],
     basket: {},
@@ -132,9 +143,14 @@ export function freshState(profile: Profile, seed = Date.now() % 100000): GameSt
     inQueue: false,
     receipts: [],
     tutorialSeen: false,
+    settings: { ...settings, voice: { ...settings.voice } },
+    savings: { balance: 0, goal: SAVINGS_GOAL.goal, target: money(SAVINGS_GOAL.targetBase) },
+    reflections: [],
   };
 }
 
+const WORLD_CHALLENGES = ['wrong-change'];
+const PLACE_NAMES: Partial<Record<LocationId, string>> = { home: 'home', town: 'the street', grocery: 'FreshMart', clinic: 'the clinic', city: 'the city centre (Bus 12)', library: 'the library' };
 const QUEUE_FOR: Partial<Record<LocationId, string>> = { grocery: 'grocery-checkout', clinic: 'clinic-reception' };
 const CLINIC_NAMES = ['Mr. Fernandes', 'A mother with a baby', 'Mrs. Rao', 'A college student', 'Mr. Khan'];
 const QUEUE_NAMES = ['Mrs. Kapoor', 'Mr. Das', 'A student', 'Aunty with a full cart', 'Office worker', 'Mr. Iyer', 'A delivery rider', 'Young couple'];
@@ -224,8 +240,10 @@ export class GameStore {
   }
 
   // ---------- profile & game lifecycle ----------
-  newGame(profile: Profile) {
-    this.state = freshState(profile);
+  newGame(profile: Profile, settings?: Partial<Settings>) {
+    const st: Settings = { ...DEFAULT_SETTINGS, ...this.state.settings, ...settings };
+    setRegion(st.region);
+    this.state = freshState(profile, undefined, st);
     this.lastWholeMinute = Math.floor(this.state.clock.minutes);
     this.runSnapshot = null;
     this.ui = { ...this.ui, screen: 'game', dialogue: null, modal: null, toasts: [], waiting: false };
@@ -236,7 +254,9 @@ export class GameStore {
   async continueGame(): Promise<boolean> {
     const loaded = await this.repo.load();
     if (!loaded) return false;
-    this.state = { ...freshState(loaded.profile), ...loaded, inQueue: false };
+    const settings: Settings = { ...DEFAULT_SETTINGS, ...(loaded.settings ?? {}) };
+    setRegion(settings.region);
+    this.state = { ...freshState(loaded.profile, loaded.seed, settings), ...loaded, settings, inQueue: false };
     this.runSnapshot = loaded.rewind ?? null;
     if (this.state.location === 'grocery' || this.state.location === 'clinic') this.state.location = 'town';
     this.lastWholeMinute = Math.floor(this.state.clock.minutes);
@@ -255,6 +275,22 @@ export class GameStore {
   goToScreen(screen: Screen) {
     this.ui = { ...this.ui, screen, modal: null, dialogue: null, waiting: false, prompt: null };
     this.notify();
+  }
+
+  // ---------- settings ----------
+  get diff() {
+    return DIFFICULTY[this.state.settings?.difficulty ?? 'normal'];
+  }
+  /** Region changes only apply before a game starts (prices & wallet use its currency). */
+  setSettings(patch: Partial<Settings>) {
+    const next: Settings = { ...this.state.settings, ...patch, voice: { ...this.state.settings.voice, ...(patch.voice ?? {}) } };
+    if (patch.region && patch.region !== this.state.settings.region) setRegion(patch.region);
+    this.state.settings = next;
+    this.notify();
+    if (this.ui.screen === 'game') void this.save('Settings saved');
+  }
+  formatMoney(n: number) {
+    return formatMoneyIn(n);
   }
 
   // ---------- members ----------
@@ -345,7 +381,7 @@ export class GameStore {
   tick(dtMs: number, moving: boolean) {
     if (this.blocking) return;
     const fast = this.state.inQueue && this.ui.waiting;
-    const mins = (dtMs / TIME_CONFIG.realMsPerGameMinute) * (fast ? TIME_CONFIG.waitMultiplier : 1);
+    const mins = (dtMs / this.diff.msPerMinute) * (fast ? TIME_CONFIG.waitMultiplier : 1);
     this.state.clock.minutes += mins;
     if (moving) {
       const drain = (this.state.world['carryingByHand'] ? 0.9 : 0.35) * mins;
@@ -450,8 +486,8 @@ export class GameStore {
     this.state.run.flags[key] = value;
     this.notify();
   }
-  getFlag<T extends FlagValue>(key: string, fallback: T): T {
-    return (this.state.run?.flags[key] as T) ?? fallback;
+  getFlag<T extends FlagValue>(key: string, fallback: T): T extends string ? string : T extends number ? number : T extends boolean ? boolean : T {
+    return ((this.state.run?.flags[key] as FlagValue | undefined) ?? fallback) as never;
   }
   bump(key: string, delta: number) {
     this.flag(key, this.getFlag(key, 0) + delta);
@@ -463,9 +499,9 @@ export class GameStore {
     }
     return this.state.world[key];
   }
-  log(text: string, consequence: string, tone: DecisionLog['tone'] = 'neutral') {
+  log(text: string, consequence: string, tone: DecisionLog['tone'] = 'neutral', alternatives?: DecisionLog['alternatives']) {
     if (!this.state.run) return;
-    this.state.run.decisions.push({ at: this.state.clock.minutes, text, consequence, tone });
+    this.state.run.decisions.push({ at: this.state.clock.minutes, text, consequence, tone, alternatives });
     this.notify();
   }
   skill(id: SkillId, pts: number) {
@@ -507,7 +543,7 @@ export class GameStore {
           const ch = CHALLENGES[ref.id];
           if (!ch || ch.trigger !== ev.type) continue;
           if (ch.when && !ch.when(this, ev)) continue;
-          const chance = ref.chance ?? 1;
+          const chance = ref.chance === undefined ? 1 : Math.min(1, ref.chance * this.diff.challengeMul);
           if (rollFor(this.state.seed + run.startedAt, ref.id) >= chance) {
             run.challengesSeen.push(ref.id); // rolled "no" — don't re-roll every frame
             run.flags[`skipped:${ref.id}`] = true;
@@ -516,6 +552,18 @@ export class GameStore {
           this.presentChallenge(ch);
           break;
         }
+      }
+    }
+    if (!this.ui.dialogue && this.diff.surprises) {
+      for (const id of WORLD_CHALLENGES) {
+        const ch = CHALLENGES[id];
+        const key = `seen.${id}.${this.state.clock.day}`;
+        if (!ch || ch.trigger !== ev.type || this.state.world[key]) continue;
+        if (ch.when && !ch.when(this, ev)) continue;
+        this.state.world[key] = true;
+        if (rollFor(this.state.seed + this.state.clock.day, id) > 0.6) continue;
+        this.presentChallenge(ch);
+        break;
       }
     }
     this.bus.emit('game', ev);
@@ -538,14 +586,15 @@ export class GameStore {
         text: p.text,
         choices: ch.options
           .filter((o) => !o.available || o.available(this))
-          .map((o) => ({
+          .map((o, _i, avail) => ({
             label: o.label,
             hint: o.hint,
             tone: o.tone,
             run: () => {
               const fb = o.apply(this);
               for (const [k, v] of Object.entries(o.skills ?? {})) this.skill(k as SkillId, v as number);
-              this.log(`${ch.title}: ${o.label}`, fb, o.tone);
+              const alternatives = avail.filter((x) => x !== o).map((x) => ({ label: x.label, outcome: x.whatIf ?? x.hint ?? '', tone: x.tone }));
+              this.log(`${ch.title}: ${o.label}`, fb, o.tone, alternatives);
               this.showFeedback(fb, o.tone);
               const next = this.pendingAfterChallenge;
               this.pendingAfterChallenge = null;
@@ -583,8 +632,8 @@ export class GameStore {
     this.runSnapshot = JSON.stringify(rest);
     this.state.rewind = this.runSnapshot;
     const asg = assignmentId ? this.state.assignments.find((x) => x.id === assignmentId) : undefined;
-    const budget = asg?.budget ?? def.budget ?? null;
-    const deadlineMin = asg?.deadlineMinutes ?? def.deadlineMinutes ?? null;
+    const budget = this.missionBudget(def, asg);
+    const deadlineMin = asg?.deadlineMinutes ?? (def.deadlineMinutes ? Math.round(def.deadlineMinutes * this.diff.deadlineMul) : null);
     const now = this.state.clock.minutes;
     this.state.run = {
       missionId,
@@ -614,6 +663,13 @@ export class GameStore {
     sfx.play('start');
     this.notify();
     this.save('Mission started — saved');
+  }
+
+  /** Budget for a mission in the current currency, after difficulty and any parent override. */
+  missionBudget(def: MissionDef, asg?: { budget: number | null }): number | null {
+    if (asg?.budget != null) return asg.budget;
+    if (def.budgetFn) return def.budgetFn(this);
+    return def.budget ? money(def.budget * this.diff.budgetMul) : null;
   }
 
   restartMission() {
@@ -726,6 +782,31 @@ export class GameStore {
   }
 
   // ---------- world interaction ----------
+  isOpen(place: string) {
+    return isOpenAt(place, this.state.clock.minutes);
+  }
+  hoursLabel(place: string) {
+    return hoursLabel(place);
+  }
+
+  /** Called by scenes before using a door. Handles closed places and the locked front door. */
+  canEnter(to: LocationId): { ok: boolean; reason?: string } {
+    if (this.blocking) return { ok: false };
+    const h = OPENING_HOURS[to];
+    if (h && !this.isOpen(to)) {
+      return { ok: false, reason: `${h.label[0].toUpperCase()}${h.label.slice(1)} is closed. Hours: ${hoursLabel(to)}.` };
+    }
+    if (to === 'home' && this.state.location === 'town' && !this.hasItem('house-keys') && this.diff.surprises) {
+      const key = `unlocked.${this.state.clock.day}`;
+      const ch = CHALLENGES['locked-out'];
+      if (!this.state.world[key] && ch) {
+        this.presentChallenge(ch);
+        return { ok: false };
+      }
+    }
+    return { ok: true };
+  }
+
   travel(to: LocationId) {
     const from = this.state.location;
     if (from === to) return;
@@ -757,9 +838,16 @@ export class GameStore {
     if (target.startsWith('shelf-')) return this.openModal({ type: 'shelf', shelfId: target });
     switch (target) {
       case 'kiosk':
-        return this.say([{ speaker: NPC_LOOKS.sharma.name, portrait: 'npc:sharma', text: 'Namaste! Prices are on the board. What do you need?' }], () =>
+        if (!this.isOpen('kiosk')) return this.say([{ speaker: '', text: `The shutters are down. ${region().words.kioskName} is open ${hoursLabel('kiosk')}.` }]);
+        return this.say([{ speaker: NPC_LOOKS.sharma.name, portrait: 'npc:sharma', text: words('{greeting} Prices are on the board. What do you need?') }], () =>
           this.openModal({ type: 'shelf', shelfId: 'kiosk' }),
         );
+      case 'key-hook':
+        return this.toggleGear('house-keys', 'You take the house keys.', 'You hang the keys back on the hook.');
+      case 'piggy-bank':
+        return this.piggyBank();
+      case 'service-desk':
+        return this.serviceDesk();
       case 'checkout':
         return this.checkoutInteract();
       case 'fridge':
@@ -775,7 +863,12 @@ export class GameStore {
       case 'bus-stop': {
         const now = this.state.clock.minutes;
         const next = Math.ceil(now / 20) * 20;
-        return this.say([{ speaker: 'Bus timetable', text: `Route 12 → City Centre. Every 20 minutes. Next bus: ${formatClock(next)} (in ${Math.round(next - now)} min). Planning ahead saves waiting!` }]);
+        return this.say([
+          {
+            speaker: 'Bus timetable',
+            text: `Route 12 → City Centre (library, post office): every 20 min at :00 :20 :40. Next: ${formatClock(next)} (in ${Math.round(next - now)} min).\nRoute 7 → Stadium: at :10 :30 :50 — not the city bus!\nTicket machine: ${formatMoney(money(10))} · Pay the driver: ${formatMoney(money(15))}.`,
+          },
+        ]);
       }
       case 'reception':
         return this.say([{ speaker: NPC_LOOKS.receptionist.name, portrait: 'npc:receptionist', text: 'Good evening! Evening OPD runs 5–8 PM. There is no appointment booked for your family today.' }]);
@@ -838,11 +931,13 @@ export class GameStore {
       father: ['I read that planning your route saves time and energy. Smart people plan!', 'Good job today, champ.'],
       'younger-sibling': ['Can we play later? I have so much homework…', 'Did you know the bus comes every 20 minutes?'],
       'older-sibling': ['Pro tip: always check prices before you put things in the basket.', 'I used to forget the shopping bag all the time.'],
-      grandparent: ['When I was young, we walked everywhere. Patience is a skill, beta.', 'Come sit with me when you are free.'],
+      grandparent: [words('When I was young, we walked everywhere. Patience is a skill, {endearment}.'), 'Come sit with me when you are free.'],
       guardian: ['Thanks for being responsible today.', 'Let me know if you need anything.'],
     };
     const opts = lines[m.role] ?? ['Hello!'];
-    return opts[Math.floor(this.state.clock.minutes / 7) % opts.length];
+    const act = scheduleFor(m.role, this.state.clock.minutes).activity;
+    const line = opts[Math.floor(this.state.clock.minutes / 7) % opts.length];
+    return act ? `(${act[0].toUpperCase()}${act.slice(1)}) ${line}` : line;
   }
 
   /** Phone home: ask the assigning family member for help. Costs 2 game minutes. */
@@ -903,28 +998,167 @@ export class GameStore {
         speaker: '',
         text: 'Go to sleep and start a new day? (Energy refills, new tasks become available.)',
         choices: [
-          { label: 'Sleep until tomorrow', run: () => this.nextDay() },
+          { label: 'Sleep until tomorrow', run: () => this.openModal({ type: 'day-summary', day: this.state.clock.day }) },
           { label: 'Not yet', run: () => {} },
         ],
       },
     ]);
   }
 
+  addReflection(r: { wentWell: string; improve: string; mood: string }) {
+    this.state.reflections = [{ day: this.state.clock.day, ...r }, ...this.state.reflections].slice(0, 30);
+    this.notify();
+  }
+
+  /** Summary of a day for the end-of-day screen. */
+  daySummary(day = this.state.clock.day) {
+    const results = this.state.results.filter((r) => r.day === day);
+    return {
+      day,
+      results,
+      xp: results.reduce((n, r) => n + r.xp, 0),
+      completed: results.filter((r) => r.outcome !== 'incomplete').length,
+      balance: this.state.wallet.balance,
+      savings: this.state.savings,
+    };
+  }
+
   nextDay() {
+    this.ui = { ...this.ui, modal: null };
     this.state.clock = { minutes: TIME_CONFIG.dayStart, day: this.state.clock.day + 1 };
     this.lastWholeMinute = Math.floor(this.state.clock.minutes);
     this.state.stats.energy = 100;
     this.state.queues = {};
     // a new day: the room gets messy again and the shop restocks
-    for (const k of Object.keys(this.state.world)) if (k.startsWith('room.') || k.startsWith('stock.') || k.startsWith('bag.')) delete this.state.world[k];
-    this.toast(`Day ${this.state.clock.day} — good morning... er, afternoon!`, 'info');
+    for (const k of Object.keys(this.state.world)) if (/^(room|stock|bag|laundry|cook|found|seen|unlocked|errand|bus|stove|veg|plates|washer)\./.test(k)) delete this.state.world[k];
+    const allowance = money(ALLOWANCE_BASE);
+    this.give(allowance, 'Daily pocket money');
+    this.toast(`Day ${this.state.clock.day}! You got ${formatMoney(allowance)} pocket money.`, 'good');
     this.notify();
     this.save();
   }
 
+  // ---------- savings ----------
+  private piggyBank() {
+    const sv = this.state.savings;
+    const w = this.state.wallet.balance;
+    const step = money(10);
+    const pct = Math.round((sv.balance / Math.max(1, sv.target)) * 100);
+    this.say([
+      {
+        speaker: 'Piggy bank',
+        text: `Saving for ${sv.goal}: ${formatMoney(sv.balance)} of ${formatMoney(sv.target)} (${pct}%).\nWallet: ${formatMoney(w)}. Money spent on extras is money not saved.`,
+        choices: [
+          { label: `Save ${formatMoney(step)}`, disabled: w < step || !!this.state.run?.cashGiven, hint: this.state.run?.cashGiven ? 'Not while carrying task money' : undefined, tone: 'good', run: () => this.moveSavings(step) },
+          { label: `Take out ${formatMoney(step)}`, disabled: sv.balance < step, run: () => this.moveSavings(-step) },
+          { label: 'Close', run: () => {} },
+        ],
+      },
+    ]);
+  }
+  moveSavings(amount: number) {
+    const sv = this.state.savings;
+    if (amount > 0) {
+      if (!this.pay(amount, `Saved toward ${sv.goal}`, false)) return;
+      sv.balance = Math.round((sv.balance + amount) * 100) / 100;
+      this.toast(`Saved ${formatMoney(amount)}`, 'good');
+      if (sv.balance >= sv.target) this.toast(`Goal reached! You saved enough for ${sv.goal}!`, 'good');
+    } else if (sv.balance >= -amount) {
+      sv.balance = Math.round((sv.balance + amount) * 100) / 100;
+      this.give(-amount, 'Taken out of savings');
+    }
+    this.notify();
+  }
+
+  // ---------- returns desk ----------
+  returnableLines() {
+    const today = this.state.clock.day;
+    const out: { r: number; l: number; id: string; name: string; price: number }[] = [];
+    this.state.receipts.forEach((rc, r) => {
+      if (rc.store !== 'FreshMart' || (rc.day ?? today) !== today) return;
+      rc.lines.forEach((ln, l) => {
+        if (ln.price <= 0 || ln.id === 'paper-bag') return;
+        if (ln.qty - (ln.returned ?? 0) > 0 && this.hasItem(ln.id)) out.push({ r, l, id: ln.id, name: ln.name, price: ln.price });
+      });
+    });
+    return out;
+  }
+  private serviceDesk() {
+    const lines = this.returnableLines();
+    const helper = { speaker: NPC_LOOKS.stocker.name, portrait: 'npc:stocker' };
+    if (!lines.length) {
+      return this.say([{ ...helper, text: 'Returns & exchanges. Bring unopened items back the same day with your receipt and I can refund you.' }]);
+    }
+    this.say([
+      {
+        ...helper,
+        text: 'Returns desk. Let me check your receipt… Which item would you like to return?',
+        choices: [
+          ...lines.slice(0, 4).map((x) => ({ label: `Return ${x.name} (+${formatMoney(x.price)})`, run: () => this.returnItem(x.r, x.l) })),
+          { label: 'Never mind', run: () => {} },
+        ],
+      },
+    ]);
+  }
+  returnItem(receiptIndex: number, lineIndex: number) {
+    const rc = this.state.receipts[receiptIndex];
+    const ln = rc?.lines[lineIndex];
+    if (!rc || !ln || !this.takeItem(ln.id)) return;
+    ln.returned = (ln.returned ?? 0) + 1;
+    this.give(ln.price, `Refund: ${ln.name}`);
+    if (this.state.run) {
+      this.state.run.spent = Math.max(0, this.state.run.spent - ln.price);
+      this.bump('returns', 1);
+    }
+    this.spendTime(2, 'Returned an item');
+    this.log(`Returned ${ln.name} at the service desk`, `Refunded ${formatMoney(ln.price)} with the receipt — many mistakes can be undone.`, 'good');
+    this.toast(`Refunded ${formatMoney(ln.price)} for ${ln.name}`, 'good');
+  }
+
+  // ---------- guidance ----------
+  /** The next required objective that can be worked on now. */
+  nextObjective() {
+    const run = this.state.run;
+    const def = this.mission;
+    if (!run || !def) return null;
+    return def.objectives.find((o) => o.required && !run.objectives[o.id]?.done && !(o.dependsOn ?? []).some((d) => !run.objectives[d]?.done)) ?? null;
+  }
+  /** Where the guide arrow should point: an interactable here, or the next location on the route. */
+  currentTarget(): { location: LocationId; target?: string; via?: LocationId } | null {
+    if (!this.state.settings?.hints) return null;
+    const o = this.nextObjective();
+    if (!o?.where) return null;
+    let target = o.where.target;
+    if (target === 'assigner') target = `npc:${this.state.run!.assignerId}`;
+    const roleAlias: Record<string, Role> = { sibling: 'younger-sibling', grandparent: 'grandparent', mother: 'mother', father: 'father' };
+    if (target && roleAlias[target]) {
+      const m = this.memberByRole(roleAlias[target]);
+      if (m) target = `npc:${m.id}`;
+    }
+    const here = this.state.location;
+    const via = o.where.location === here ? undefined : ROUTE_NEXT[here]?.[o.where.location];
+    return { location: o.where.location, target, via };
+  }
+  hint() {
+    const o = this.nextObjective();
+    const left = this.timeLeft();
+    if (!o) {
+      return this.say([{ speaker: 'Hint', text: this.state.run ? 'You are almost done — check your journal (J).' : 'Talk to a family member or check the notice board for a task.' }]);
+    }
+    this.flag('usedHint', true);
+    const where = o.where && o.where.location !== this.state.location ? ` Head to: ${PLACE_NAMES[o.where.location] ?? o.where.location}.` : '';
+    this.say([
+      {
+        speaker: 'Hint',
+        text: `Next step: ${fmt(this, o.label)}.${where}${o.hint ? '\n' + fmt(this, o.hint) : ''}${left !== null ? `\nAbout ${Math.max(0, Math.round(left))} minutes left.` : ''}`,
+      },
+    ]);
+  }
+
   // ---------- shopping ----------
   priceOf(shelfId: string, item: string): number {
-    return findProduct(shelfId, item)?.price ?? 0;
+    const p = findProduct(shelfId, item);
+    return p ? money(p.price) : 0;
   }
   stockOf(shelfId: string, item: string): number {
     const p = findProduct(shelfId, item);
@@ -936,7 +1170,16 @@ export class GameStore {
     return GROCERY_SHELVES.find((s) => s.products.some((p) => p.item === item))?.id ?? '';
   }
   basketTotal() {
-    return basketTotal(this.state.basket, (id) => this.priceOf(this.basketShelf(id), id));
+    return basketTotal(this.state.basket, (id) => this.priceOf(this.basketShelf(id), id)) - this.basketDiscount();
+  }
+  /** Multi-buy offers (e.g. 3 for 2) currently applied to the basket. */
+  basketDiscount() {
+    let d = 0;
+    for (const [id, q] of Object.entries(this.state.basket)) {
+      const p = findProduct(this.basketShelf(id), id);
+      if (p?.deal === '3for2') d += Math.floor(q / 3) * this.priceOf(this.basketShelf(id), id);
+    }
+    return d;
   }
 
   addToBasket(shelfId: string, item: string) {
@@ -967,18 +1210,20 @@ export class GameStore {
     const p = KIOSK_SHELF.products.find((x) => x.item === item);
     if (!p) return;
     if (this.stockOf('kiosk', item) <= 0) return this.toast('Sold out here too.', 'bad');
-    if (!this.pay(p.price, `Sharma Store: ${itemName(item)}`)) {
+    if (!this.isOpen('kiosk')) return this.toast(`Closed. Open ${hoursLabel('kiosk')}.`, 'bad');
+    const price = money(p.price);
+    if (!this.pay(price, `${region().words.kioskName}: ${itemName(item)}`)) {
       sfx.play('error');
-      return this.toast(`Not enough money (need ${formatMoney(p.price)}).`, 'bad');
+      return this.toast(`Not enough money (need ${formatMoney(price)}).`, 'bad');
     }
     if (!this.giveItem(item)) {
-      this.give(p.price, 'Refund (could not carry)');
+      this.give(price, 'Refund (could not carry)');
       return;
     }
     if (p.stockKey) this.state.world[p.stockKey] = this.stockOf('kiosk', item) - 1;
-    this.state.receipts.push({ at: this.state.clock.minutes, store: 'Sharma General Store', lines: [{ id: item, name: itemName(item), qty: 1, price: p.price }], total: p.price });
+    this.state.receipts.push({ at: this.state.clock.minutes, day: this.state.clock.day, store: region().words.kioskName, lines: [{ id: item, name: itemName(item), qty: 1, price }], total: price });
     this.spendTime(1);
-    this.toast(`Bought ${itemName(item)} for ${formatMoney(p.price)}`, 'good');
+    this.toast(`Bought ${itemName(item)} for ${formatMoney(price)}`, 'good');
     this.emit({ type: 'purchased', store: 'kiosk', items: { [item]: 1 } });
   }
 
@@ -1000,7 +1245,7 @@ export class GameStore {
       // evening rush: when you walk in, the line has refilled to a realistic length
       const q = this.state.queues[id];
       const hour = (this.state.clock.minutes % 1440) / 60;
-      const minLen = loc === 'grocery' ? (hour >= 17 && hour < 20 ? 5 : 3) : 3;
+      const minLen = loc === 'grocery' ? (hour >= 17 && hour < 20 ? this.diff.queueMin : 3) : Math.min(3, this.diff.queueMin);
       const npcs = q.customers.filter((c) => !c.isPlayer).length;
       if (!this.state.inQueue && npcs < minLen) {
         const extra = Array.from({ length: minLen - npcs }, (_, i) => this.makeCustomer(q.served + q.customers.length + i));
@@ -1163,6 +1408,7 @@ export class GameStore {
   private completePayment(total: number, bagFee: number, overBudget: boolean) {
     if (!this.pay(total, 'FreshMart checkout')) return;
     const items = { ...this.state.basket };
+    const discount = this.basketDiscount();
     let dropped = false;
     for (const [id, q] of Object.entries(items)) {
       const r = addItem(this.state.inventory, id, q);
@@ -1172,10 +1418,12 @@ export class GameStore {
     if (dropped) this.toast('Some items were too heavy — you left them with the cashier.', 'bad');
     this.state.receipts.push({
       at: this.state.clock.minutes,
+      day: this.state.clock.day,
       store: 'FreshMart',
       lines: [
         ...Object.entries(items).map(([id, q]) => ({ id, name: itemName(id), qty: q, price: this.priceOf(this.basketShelf(id), id) })),
         ...(bagFee ? [{ id: 'paper-bag', name: 'Paper bag', qty: 1, price: bagFee }] : []),
+        ...(discount ? [{ id: 'discount', name: 'Offer: 3 for 2', qty: 1, price: -discount }] : []),
       ],
       total,
     });

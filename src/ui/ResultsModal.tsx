@@ -4,6 +4,8 @@ import { formatMoney } from '../domain/items';
 import { DIMENSION_LABELS, SKILL_LABELS, type ScoreDimension } from '../domain/types';
 import { getMission } from '../missions/registry';
 import { fmt } from '../missions/format';
+import { useState } from 'react';
+import type { DecisionLog } from '../domain/types';
 import { useSnap } from './hooks';
 import { Bar, Modal } from './Modal';
 import { OUTCOME_LABEL } from './JournalPanel';
@@ -38,7 +40,53 @@ const LESSONS: Record<string, string> = {
     'In real life, helping someone means guiding them, not doing it all for them. Patience, clear steps, and checking what they actually need make younger kids more independent.',
   'clinic-visit':
     'In real life, clinics run on queues, tokens and paperwork. Bringing the right documents, telling staff clearly why you are there, and waiting patiently gets everyone seen faster.',
+  'cook-meal':
+    'In real life, cooking is planning: check what you have, prepare before the heat goes on, stay with the stove, and clean as you go. Safety first, then taste.',
+  laundry:
+    'In real life, laundry is sorting and reading labels: separate colours, choose the right setting, and hang clothes out soon so they dry fresh.',
+  'bus-trip':
+    'In real life, public transport runs on timetables. Reading the route number, leaving a few minutes early and having your fare ready make trips calm instead of rushed.',
+  errands:
+    'In real life, errands are a puzzle of opening hours and distance. Doing the place that closes first, then the rest, saves time and stress.',
 };
+
+const TONE_WORD = { good: 'Good outcome', neutral: 'Mixed outcome', bad: 'Tough outcome' } as const;
+
+/** A decision in the timeline, with an expandable "What if…?" row for the paths not taken. */
+function DecisionItem({ d }: { d: DecisionLog }) {
+  const [open, setOpen] = useState(false);
+  const alts = d.alternatives ?? [];
+  return (
+    <div className="tl-item">
+      <span className="t">{formatClock(d.at)}</span>
+      <span className={`tone-dot ${d.tone}`} role="img" aria-label={TONE_WORD[d.tone]} />
+      <div>
+        <div className="d">{d.text}</div>
+        <div className="c">→ {d.consequence}</div>
+        {alts.length > 0 && (
+          <div className={`whatif ${open ? 'open' : ''}`}>
+            <button className="whatif-toggle" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+              <span aria-hidden>{open ? '▾' : '▸'}</span> What if…? <span className="tiny muted">{alts.length} other path{alts.length > 1 ? 's' : ''}</span>
+            </button>
+            {open && (
+              <ul className="whatif-list">
+                {alts.map((a, i) => (
+                  <li key={i}>
+                    <span className={`tone-dot ${a.tone}`} role="img" aria-label={TONE_WORD[a.tone]} />
+                    <span>
+                      <b>{a.label}</b>
+                      <span className="muted"> → {a.outcome}</span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function Radar({ scores }: { scores: [ScoreDimension, number][] }) {
   const n = scores.length;
@@ -96,6 +144,16 @@ export default function ResultsModal({ resultId }: { resultId: string }) {
   const scores = (Object.entries(r.scores) as [ScoreDimension, number | undefined][]).filter((e): e is [ScoreDimension, number] => typeof e[1] === 'number');
   const isLatest = state.results[0]?.id === r.id && !state.run;
   const overBudget = r.budget !== null && r.moneySpent > r.budget;
+  const altCount = r.decisions.filter((d) => d.alternatives?.length).length;
+  const retry = (different: boolean) => {
+    store.retryFromResult(r);
+    if (store.ui.modal?.type === 'results') {
+      store.toast('Retry is only available right after finishing. Ask your family for the task again.', 'neutral');
+    } else if (different) {
+      const pick = r.decisions.find((d) => d.alternatives?.some((a) => a.tone === 'good' && a.tone !== d.tone)) ?? r.decisions.find((d) => d.alternatives?.length);
+      store.toast(pick ? `This time, try another path at: “${pick.text}”` : 'This time, try a different plan — order, route or choices.', 'info');
+    }
+  };
   return (
     <Modal
       title={r.title}
@@ -107,11 +165,13 @@ export default function ResultsModal({ resultId }: { resultId: string }) {
           <span className="tiny muted grow" style={{ alignSelf: 'center' }}>
             Simulated practice — real life varies.
           </span>
+          {isLatest && altCount > 0 && (
+            <button className="btn btn-sky" onClick={() => retry(true)} title="Replay and pick a different path at the decision points">
+              Try a different approach
+            </button>
+          )}
           {isLatest && (
-            <button className="btn" onClick={() => {
-                store.retryFromResult(r);
-                if (store.ui.modal?.type === 'results') store.toast('Retry is only available right after finishing. Ask your family for the task again.', 'neutral');
-              }}>
+            <button className="btn" onClick={() => retry(false)}>
               ↺ Retry
             </button>
           )}
@@ -232,16 +292,14 @@ export default function ResultsModal({ resultId }: { resultId: string }) {
               ))}
             </div>
           )}
+          {altCount > 0 && (
+            <p className="whatif-intro">
+              <b>Other paths you could have taken</b> — open <i>What if…?</i> under a decision to see how the other choices would have played out. There's rarely one right answer.
+            </p>
+          )}
           <div className="timeline">
             {r.decisions.map((d, i) => (
-              <div key={i} className="tl-item">
-                <span className="t">{formatClock(d.at)}</span>
-                <span className={`tone-dot ${d.tone}`} aria-label={d.tone} />
-                <div>
-                  <div className="d">{d.text}</div>
-                  <div className="c">→ {d.consequence}</div>
-                </div>
-              </div>
+              <DecisionItem key={i} d={d} />
             ))}
           </div>
         </div>

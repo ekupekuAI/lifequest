@@ -2,7 +2,10 @@ import Phaser from 'phaser';
 import { WorldScene, T, type WorldConfig } from './WorldScene';
 import { store } from '../../core/store';
 import { mulberry32 } from '../../core/systems';
-import type { GameState } from '../../domain/types';
+import type { GameState, LocationId } from '../../domain/types';
+import { isOpenAt } from '../../domain/world';
+import { busPhase, busStopped, installTownHandlers, nextRoute12, type Stop } from '../bus';
+import { formatClock } from '../../core/systems';
 
 const W = 44;
 const H = 30;
@@ -38,7 +41,60 @@ function buildRows(): string[] {
   return g.map((r) => r.join(''));
 }
 
+/** Bus sprite that follows the shared timetable at one stop (drives in, waits, drives away to the left). */
+export class BusView {
+  private img: Phaser.GameObjects.Image;
+  private last: string | null = null;
+  constructor(
+    private scene: Phaser.Scene,
+    private stop: Stop,
+    readonly stopX: number,
+    private y: number,
+    private dest: string,
+  ) {
+    this.img = scene.add.image(-300, y, 'bus').setOrigin(0.5, 1).setFlipX(true).setVisible(false).setDepth(y);
+  }
+
+  /** x position of the open front door (the bus faces left, so it is left of centre) */
+  get doorX() {
+    return this.stopX - 26;
+  }
+
+  /** Update the sprite; returns the bus's horizontal extent when it is on screen. */
+  sync(player?: { x: number; y: number }): { x0: number; x1: number; stopped: boolean } | null {
+    const p = busPhase(store, this.stop);
+    const state = p ? `${p.route}:${p.phase}:${p.at}` : null;
+    const near = !!player && Math.abs(player.x - this.stopX) < 170 && Math.abs(player.y - this.y) < 90;
+    if (state !== this.last) {
+      if (p?.phase === 'stopped' && near && !store.blocking)
+        store.toast(p.route === 12 ? `🚌 Bus 12 → ${this.dest} is at the stop! Board at the front door.` : '🚌 A Route 7 bus (Stadium) has stopped.', p.route === 12 ? 'info' : 'neutral');
+      if (p?.phase === 'leaving' && p.route === 12 && near && this.last?.endsWith(`stopped:${p.at}`) && !store.blocking) {
+        const n = nextRoute12(store);
+        store.toast(`Bus 12 is leaving without you…${n !== null ? ` Next one at ${formatClock(n)}.` : ''}`, 'bad');
+      }
+      this.last = state;
+    }
+    if (!p) {
+      this.img.setVisible(false);
+      return null;
+    }
+    const key = p.route === 12 ? 'bus' : 'bus-7';
+    if (this.img.texture.key !== key && this.scene.textures.exists(key)) this.img.setTexture(key);
+    let x = this.stopX;
+    if (p.phase === 'arriving') x = this.stopX + 150 * (1 - Math.sin((p.t * Math.PI) / 2));
+    if (p.phase === 'leaving') x = this.stopX - 760 * p.t * p.t;
+    this.img.setPosition(Math.round(x), this.y).setVisible(true);
+    return { x0: x - 40, x1: x + 40, stopped: p.phase === 'stopped' };
+  }
+}
+
+/** open/closed sign texture for a place, re-evaluated by syncDynamic */
+export const openSign = (place: string) => (s: GameState) => (isOpenAt(place, s.clock.minutes) ? 'open-sign' : 'closed-sign');
+
+const STOP_X = 640;
+
 export class TownScene extends WorldScene {
+  private busView?: BusView;
   private cars: { img: Phaser.GameObjects.Image; dir: 1 | -1; y: number; wait: number }[] = [];
   private rain?: Phaser.GameObjects.Particles.ParticleEmitter;
 
@@ -58,6 +114,8 @@ export class TownScene extends WorldScene {
         'home-door': { x: 88, y: b(24) + 4, facing: 'down' },
         'store-door': { x: 104, y: b(9), facing: 'down' },
         'clinic-door': { x: 320, y: b(9), facing: 'down' },
+        bus: { x: STOP_X - 44, y: b(14) + 4, facing: 'down' },
+        'bus-stop': { x: STOP_X - 44, y: b(14) + 4, facing: 'down' },
       },
     };
   }
@@ -86,8 +144,26 @@ export class TownScene extends WorldScene {
       this.prop({ key: 'lamp-glow', x: col * T, y: b(10) + 8, blend: 'add', depth: 19990, alpha: 0.55, visible: night });
     }
     this.prop({ key: 'bus-stop', x: 656, y: b(15), solid: { w: 44, h: 10 } });
-    this.interact({ id: 'bus-stop', x: 656, y: b(15) + 4, label: 'Read the bus timetable', r: 20 });
+    this.interact({ id: 'bus-stop', x: 656, y: b(15) - 6, label: 'Bus stop: timetable & wait for Bus 12', r: 22 });
+    this.prop({ key: 'ticket-machine', x: 600, y: b(15), solid: { w: 12, h: 6 } });
+    this.interact({ id: 'ticket-machine', x: 600, y: b(15) - 6, label: 'Buy a bus ticket', r: 16 });
+    this.interact({
+      id: 'bus-door',
+      x: STOP_X - 26,
+      y: b(14) - 2,
+      r: 22,
+      label: () => (busStopped(store, 'town') === 7 ? 'Get on the bus (Route 7 → Stadium)' : 'Board the bus (Route 12 → City Centre)'),
+      visible: () => busStopped(store, 'town') !== null,
+    });
     this.prop({ key: 'mailbox', x: 136, y: b(15) });
+    this.interact({ id: 'mailbox', x: 136, y: b(15) - 4, label: 'Post box (last collection 6:30 PM)', r: 14 });
+    // opening-hours signs next to the doors
+    this.prop({ key: openSign('grocery'), x: 148, y: b(9) - 2, depth: b(9) - 10 });
+    this.interact({ id: 'hours-grocery', x: 148, y: b(9) - 4, label: 'Opening hours', r: 12 });
+    this.prop({ key: openSign('kiosk'), x: 254, y: b(9) - 2, depth: b(9) - 10 });
+    this.interact({ id: 'hours-kiosk', x: 254, y: b(9) - 4, label: 'Opening hours', r: 12 });
+    this.prop({ key: openSign('clinic'), x: 360, y: b(9) - 2, depth: b(9) - 10 });
+    this.interact({ id: 'hours-clinic', x: 360, y: b(9) - 4, label: 'Opening hours', r: 12 });
     this.prop({ key: 'manhole', x: 360, y: b(12), depth: -900 });
 
     // ---- south: home, park, houses ----
@@ -111,26 +187,38 @@ export class TownScene extends WorldScene {
     this.prop({ key: 'tree', x: 456, y: b(19), solid: { w: 10, h: 6 } });
     this.prop({ key: 'tree', x: 680, y: b(26), solid: { w: 10, h: 6 } });
     this.prop({ key: 'sign-arrow', x: 168, y: b(15) });
-    this.interact({ id: 'sign', x: 168, y: b(15) - 2, label: 'Read the signpost', flavor: '← Home (via garden path)   ↑ FreshMart · Sharma Store · Clinic   → School · Bus stop' });
+    this.interact({ id: 'sign', x: 168, y: b(15) - 2, label: 'Read the signpost', flavor: '← Home (via garden path)   ↑ FreshMart · Corner shop · Clinic   → School · Bus stop (Bus 12 → City Centre)' });
 
     // ---- townsfolk ----
     this.npc({ id: 'folk1', texture: 'char:folk:1', x: 300, y: b(10), wander: { x: 200, y: b(9), w: 300, h: 10 }, label: 'Say hi', flavor: '"Evening! Busy day at FreshMart — the queue is long today."' });
     this.npc({ id: 'folk2', texture: 'char:folk:4', x: 500, y: b(15), wander: { x: 380, y: b(14) + 4, w: 220, h: 8 }, label: 'Say hi', flavor: '"Always cross at the zebra crossing, kiddo. Cars stop there."' });
     this.npc({ id: 'folk3', texture: 'char:folk:6', x: 260, y: b(24), wander: { x: 210, y: b(23), w: 140, h: 40 }, label: 'Say hi', flavor: '"The bus to the city comes every 20 minutes. Plan ahead!"' });
 
-    // ---- cars ----
+    // ---- bus & cars ----
+    this.busView = new BusView(this, 'town', STOP_X, b(13) - 1, 'City Centre');
     this.cars = [
       { img: this.add.image(-40, b(11) - 2, 'car-red').setDepth(b(11)), dir: 1, y: b(11) - 2, wait: 0 },
       { img: this.add.image(W * T + 200, b(13) - 2, 'car-blue').setFlipX(true).setDepth(b(13)), dir: -1, y: b(13) - 2, wait: 0 },
     ];
   }
 
+  protected afterCreate() {
+    this.unsub.push(installTownHandlers(store));
+  }
+
+  /** The guide arrow leads to the bus stop when the next step is in the city. */
+  protected extraRoute(to: LocationId) {
+    return to === 'city' || to === 'library' ? { x: 656, y: b(15) - 6 } : null;
+  }
+
   protected tick(delta: number) {
-    // cars stop for pedestrians on or near the road ahead of them
+    const bus = this.busView?.sync(this.player) ?? null;
+    // cars stop for pedestrians on or near the road ahead of them, and queue behind a bus
     for (const car of this.cars) {
       const ahead = (this.player.x - car.img.x) * car.dir;
       const onRoad = this.player.y > b(10) - 4 && this.player.y < b(13) + 8;
-      const blocked = onRoad && ahead > 0 && ahead < 44;
+      const busAhead = !!bus && (car.dir === -1 ? car.img.x - bus.x1 : bus.x0 - car.img.x);
+      const blocked = (onRoad && ahead > 0 && ahead < 44) || (busAhead !== false && busAhead > 0 && busAhead < 46);
       if (store.blocking) continue;
       if (!blocked) car.img.x += car.dir * 70 * (delta / 1000);
       if (car.dir === 1 && car.img.x > W * T + 60) car.img.x = -60 - Math.random() * 300;

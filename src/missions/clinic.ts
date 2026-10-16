@@ -3,6 +3,7 @@ import type { GameStore } from '../core/store';
 import { NPC_LOOKS } from '../domain/family';
 import { completeService, formatClock, playerIndex } from '../core/systems';
 import { CHALLENGES } from './challenges';
+import { words } from '../domain/region';
 import { clamp, timeScore } from './validation';
 
 const receptionist = { speaker: NPC_LOOKS.receptionist.name, portrait: 'npc:receptionist' };
@@ -51,7 +52,7 @@ export const clinicVisit: MissionDef = {
   location: 'home',
   destination: 'clinic',
   briefing:
-    "Beta, my knees are fine but the doctor wants a routine check-up. Could you go to the clinic and check me in? You'll need my health card — it's in my document folder in the living room cabinet. Come back and tell me the time and the room.",
+    "{endearment}, my knees are fine but the doctor wants a routine check-up. Could you go to the clinic and check me in? You'll need my health card — it's in my document folder in the living room cabinet. Come back and tell me the time and the room.",
   instructions: [
     'Health card: document folder in the living room cabinet (left side).',
     'The clinic is on the south side of the road, east of FreshMart.',
@@ -60,10 +61,10 @@ export const clinicVisit: MissionDef = {
   ],
   objectives: [
     { id: 'receive', label: 'Listen to the request', type: 'talk', required: true },
-    { id: 'card', label: 'Take the health card (important!)', type: 'collect', required: false },
-    { id: 'reach', label: 'Go to the clinic', type: 'reach', target: 'clinic', required: true },
-    { id: 'checkin', label: 'Check in at reception', type: 'checkout', required: true },
-    { id: 'report', label: 'Tell {grandparent} the time and room', type: 'talk', required: true, dependsOn: ['checkin'] },
+    { id: 'card', label: 'Take the health card (important!)', type: 'collect', required: false, where: { location: 'home', target: 'doc-folder' } },
+    { id: 'reach', label: 'Go to the clinic', type: 'reach', target: 'clinic', required: true, where: { location: 'clinic' }, hint: 'The clinic is on the same side of the road as FreshMart.' },
+    { id: 'checkin', label: 'Check in at reception', type: 'checkout', required: true, where: { location: 'clinic', target: 'reception' } },
+    { id: 'report', label: 'Tell {grandparent} the time and room', type: 'talk', required: true, dependsOn: ['checkin'], where: { location: 'home', target: 'assigner' } },
   ],
   deadlineMinutes: 75,
   lateRule: 'partial',
@@ -141,7 +142,7 @@ export const clinicVisit: MissionDef = {
       {
         speaker: g.name,
         portrait: g.id,
-        text: 'You checked me in? Shabash! So… what time, and which room?',
+        text: words('You checked me in? {praise} So… what time, and which room?'),
         choices: [
           ...opts.map((o) => ({
             label: `${formatClock(o.t)}, Room ${o.r}`,

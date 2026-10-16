@@ -53,6 +53,8 @@ export const LOCATION_NAMES: Record<string, string> = {
   town: 'Town',
   grocery: 'FreshMart',
   clinic: 'City Clinic',
+  city: 'City Centre',
+  library: 'Library',
 };
 
 export function levelFor(xp: number) {

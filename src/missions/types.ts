@@ -25,6 +25,10 @@ export interface ObjectiveDef {
   required: boolean;
   /** objectives that must be done before this one can complete */
   dependsOn?: string[];
+  /** where to go for this step — drives the on-screen guide arrow. target = an interactable id or npc:<memberId> */
+  where?: { location: LocationId; target?: string };
+  /** plain-language help shown by the Hint button */
+  hint?: string;
 }
 
 export interface RequiredItem {
@@ -57,6 +61,8 @@ export interface MissionDef {
   requiredItems?: RequiredItem[];
   optionalItems?: string[];
   budget?: number;
+  /** exact budget in the current currency (overrides `budget` conversion, e.g. "two bus tickets") */
+  budgetFn?(s: GameStore): number;
   deadlineMinutes?: number;
   lateRule: 'partial' | 'none';
   challenges: { id: string; chance?: number }[];
@@ -94,6 +100,8 @@ export interface ChallengeOption {
   available?(s: GameStore): boolean;
   /** apply state changes; return the feedback text shown to the player */
   apply(s: GameStore): string;
+  /** short, side-effect-free summary of this option's consequence (shown as a "what if" on the results screen) */
+  whatIf?: string;
   skills?: Partial<Record<SkillId, number>>;
 }
 

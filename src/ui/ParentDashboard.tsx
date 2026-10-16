@@ -4,11 +4,12 @@ import { formatClock } from '../core/systems';
 import { GUARDIAN_ROLES, type MissionStatus } from '../domain/types';
 import { ROLE_LABELS } from '../domain/family';
 import { formatMoney } from '../domain/items';
+import { money, region } from '../domain/region';
 import { UPCOMING, getMission } from '../missions/registry';
 import { useSnap } from './hooks';
 import { Modal, Stars } from './Modal';
 import { Portrait } from './art';
-import { OUTCOME_LABEL, OUTCOME_TONE } from './JournalPanel';
+import { OUTCOME_LABEL, OUTCOME_TONE, ReflectionList } from './JournalPanel';
 
 const STATUS_TONE: Partial<Record<MissionStatus, string>> = {
   assigned: 'sky',
@@ -18,9 +19,9 @@ const STATUS_TONE: Partial<Record<MissionStatus, string>> = {
   cancelled: 'ghost',
 };
 
-const clampNum = (v: string, lo: number, hi: number): number | null => {
+const clampNum = (v: string, lo: number, hi: number, step = 1): number | null => {
   if (v.trim() === '') return null;
-  const n = Math.round(Number(v));
+  const n = Math.round(Math.round(Number(v) / step) * step * 100) / 100;
   if (!Number.isFinite(n)) return null;
   return Math.max(lo, Math.min(hi, n));
 };
@@ -35,7 +36,11 @@ export default function ParentDashboard({ onClose, fromTitle = false }: { onClos
   const [deadline, setDeadline] = useState<Record<string, string>>({});
   const [note, setNote] = useState<Record<string, string>>({});
   const [flash, setFlash] = useState<string | null>(null);
-  const templates = store.availableMissions();
+  // playable templates first; new missions appear here automatically from the registry
+  const templates = store.availableMissions().sort((a, b) => Number(b.avail.ok) - Number(a.avail.ok));
+  const cur = region().currency;
+  const maxBudget = money(5000);
+  const diff = store.diff;
   const player = members.find((m) => m.role === 'player');
 
   function assign(missionId: string) {
@@ -46,7 +51,7 @@ export default function ParentDashboard({ onClose, fromTitle = false }: { onClos
       missionId,
       assignedTo: 'player',
       assignedBy: by,
-      budget: def.budget ? clampNum(budget[missionId] ?? '', 0, 5000) : null,
+      budget: def.budget ? clampNum(budget[missionId] ?? '', 0, maxBudget, cur.step) : null,
       deadlineMinutes: clampNum(deadline[missionId] ?? '', 5, 600),
       note: (note[missionId] ?? '').replace(/[<>]/g, '').trim().slice(0, 80) || undefined,
     });
@@ -97,6 +102,15 @@ export default function ParentDashboard({ onClose, fromTitle = false }: { onClos
           {flash}
         </p>
       )}
+      <div className="row wrap parent-meta">
+        <span className="pill sky" title={diff.blurb}>
+          Difficulty: {diff.label}
+        </span>
+        <span className="pill ghost">
+          {region().flag} {region().label} · {cur.code} ({cur.symbol})
+        </span>
+        <span className="tiny muted grow">{diff.blurb} Change it in Settings.</span>
+      </div>
       <div className="parent-grid">
         <div className="col">
           <div className="section">
@@ -150,13 +164,16 @@ export default function ParentDashboard({ onClose, fromTitle = false }: { onClos
                       <div className="tpl-fields">
                         {def.budget ? (
                           <label className="field">
-                            <span className="label">Budget (₹)</span>
+                            <span className="label">
+                              Budget ({cur.symbol} {cur.code})
+                            </span>
                             <input
                               type="number"
-                              inputMode="numeric"
+                              inputMode={cur.decimals ? 'decimal' : 'numeric'}
                               min={0}
-                              max={5000}
-                              placeholder={String(def.budget)}
+                              max={maxBudget}
+                              step={cur.step}
+                              placeholder={String(money(def.budget * diff.budgetMul))}
                               value={budget[def.id] ?? ''}
                               onChange={(e) => setBudget((b) => ({ ...b, [def.id]: e.target.value }))}
                             />
@@ -174,7 +191,7 @@ export default function ParentDashboard({ onClose, fromTitle = false }: { onClos
                             inputMode="numeric"
                             min={5}
                             max={600}
-                            placeholder={def.deadlineMinutes ? String(def.deadlineMinutes) : 'none'}
+                            placeholder={def.deadlineMinutes ? String(Math.round(def.deadlineMinutes * diff.deadlineMul)) : 'none'}
                             value={deadline[def.id] ?? ''}
                             onChange={(e) => setDeadline((d) => ({ ...d, [def.id]: e.target.value }))}
                           />
@@ -212,6 +229,16 @@ export default function ParentDashboard({ onClose, fromTitle = false }: { onClos
         </div>
 
         <div className="col">
+          <div className="section">
+            <h3>Reflections</h3>
+            {state.reflections?.length ? (
+              <ReflectionList list={state.reflections} max={6} />
+            ) : (
+              <p className="muted small boxed">
+                End-of-day notes appear here after {player?.name ?? 'the player'} goes to sleep in the game. They're a great way to start a chat about the day.
+              </p>
+            )}
+          </div>
           <div className="section">
             <h3>Assignments</h3>
             {asgs.length === 0 && <p className="muted small boxed">No tasks assigned yet. Pick a template to start.</p>}

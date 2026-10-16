@@ -16,6 +16,7 @@ import {
   groundShadow,
 } from './kit';
 import { drawPixelText, measurePixelText } from './pixelFont';
+import { drawFittedText, fitText, signText } from './signs';
 import type { PropDef } from './props';
 
 const WH = PAL.white;
@@ -229,13 +230,18 @@ function storeFront(ctx: Ctx) {
   hline(ctx, 0, 17, 112, g[2]);
   hline(ctx, 0, 31, 112, g[0]);
   // logo leaf + text (scale 2)
-  const text = 'FRESHMART';
-  const tw = measurePixelText(text, 2);
-  const tx = Math.floor((112 - tw) / 2) + 6;
-  sprite(ctx, tx - 12, 19, ['..###', '.####', '####.', '###..', '#....'], { '#': PAL.yellow[3] });
-  px(ctx, tx - 10, 20, PAL.yellow[4]);
-  drawPixelText(ctx, text, tx + 1, 20, g[0], 2);
-  drawPixelText(ctx, text, tx, 19, '#ffffff', 2);
+  const text = signText('store');
+  const withLogo = fitText(text, 92, 10, 2);
+  if (withLogo.scale === 2 && withLogo.lines.length === 1) {
+    // leaf logo + big name, centred as one group
+    const tx = Math.floor((112 - withLogo.w) / 2) + 6;
+    sprite(ctx, tx - 12, 19, ['..###', '.####', '####.', '###..', '#....'], { '#': PAL.yellow[3] });
+    px(ctx, tx - 10, 20, PAL.yellow[4]);
+    drawFittedText(ctx, text, tx + 1, 20, withLogo.w, 10, g[0], undefined, 2);
+    drawFittedText(ctx, text, tx, 19, withLogo.w, 10, '#ffffff', undefined, 2);
+  } else {
+    drawFittedText(ctx, text, 4, 19, 104, 12, '#ffffff', g[0], 2);
+  }
   // awning
   awning(ctx, 2, 33, 108, 9, g, WH, 6);
   // display windows
@@ -298,7 +304,7 @@ function kiosk(ctx: Ctx) {
   vline(ctx, 2, 9, 39, wall[3]);
   vline(ctx, 61, 9, 39, wall[1]);
   // sign
-  signBoard(ctx, 4, 10, 56, 9, PAL.yellow, 'SHARMA STORE', PAL.red[1], PAL.yellow[1]);
+  signBoard(ctx, 4, 10, 56, 9, PAL.yellow, signText('kiosk'), PAL.red[1], PAL.yellow[1]);
   // awning
   awning(ctx, 2, 19, 60, 6, PAL.red, WH, 4);
   // opening with goods
@@ -361,8 +367,7 @@ function clinicFront(ctx: Ctx) {
   hline(ctx, 18, 19, 12, PAL.red[3]);
   rect(ctx, 22, 21, 4, 8, '#ffffff');
   rect(ctx, 20, 23, 8, 4, '#ffffff');
-  drawPixelText(ctx, 'CLINIC', 35, 22, PAL.red[0], 2);
-  drawPixelText(ctx, 'CLINIC', 34, 21, PAL.red[2], 2);
+  drawFittedText(ctx, signText('clinic'), 33, 19, 48, 12, PAL.red[2], PAL.red[0], 2);
   // windows (blue tint, blinds)
   for (const wx of [6, 70]) {
     chajja(ctx, wx - 2, 37, 24);
@@ -423,7 +428,7 @@ function school(ctx: Ctx) {
     facadeWindow(ctx, wx, 54, 10, 12, WH, undefined);
   }
   // sign over entrance
-  signBoard(ctx, 40, 26, 30, 11, PAL.blue, 'SCHOOL', '#ffffff', PAL.blue[0]);
+  signBoard(ctx, 39, 24, 32, 13, PAL.blue, signText('school'), '#ffffff', PAL.blue[0]);
   // entrance arch + doors
   rect(ctx, 42, 42, 26, 35, brick[2]);
   ellipse(ctx, 42, 38, 26, 10, brick[2]);

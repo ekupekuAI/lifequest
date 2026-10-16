@@ -20,6 +20,9 @@ import {
   FRAME_H,
   type CharKind,
   drawPixelText,
+  setSignText,
+  SIGN_PROP_KEYS,
+  SIGN_DEFAULTS,
 } from './index';
 
 const S = 3;
@@ -225,8 +228,70 @@ function nightVersion(src: HTMLCanvasElement): HTMLCanvasElement {
   for (const k of Object.keys(PROPS)) show(g, drawProp(k), `${k} ${PROPS[k].w}x${PROPS[k].h}`);
 }
 {
+  const g = section('Region sign text (setSignText) — long-name fitting');
+  const tests = ['CORNER SHOP', 'TIENDA LUPITA', 'MAMA NKECHI', 'KONBINI', 'MERCADINHO', 'SUPERMERCADO DEL BARRIO'];
+  for (const t of tests) {
+    setSignText({ kiosk: t, store: t, clinic: t, school: t, library: t, post: t });
+    for (const k of SIGN_PROP_KEYS) show(g, drawProp(k), `${k}: ${t}`, 2);
+  }
+  setSignText({ ...SIGN_DEFAULTS });
+}
+{
+  const g = section('Downtown mock (bus route 12)');
+  const W = 24 * TILE;
+  const H = 10 * TILE;
+  const c = document.createElement('canvas');
+  c.width = W;
+  c.height = H;
+  const ctx = c.getContext('2d')!;
+  for (let y = 0; y < 10; y++)
+    for (let x = 0; x < 24; x++) {
+      let t: TileName = 'sidewalk';
+      if (y < 5) t = (x + y) % 9 === 0 ? 'grassFlowers' : 'grass';
+      if (y === 5 || y === 6) t = 'sidewalk';
+      if (y === 7 || y === 9) t = 'road';
+      if (y === 8) t = 'roadLine';
+      blit(ctx, t, x * TILE, y * TILE);
+    }
+  placeProp(ctx, 'library-front', 0, 5 * TILE + 8);
+  placeProp(ctx, 'fountain', 8 * TILE, 6 * TILE + 8);
+  placeProp(ctx, 'post-office-front', 10 * TILE + 8, 5 * TILE + 8);
+  placeProp(ctx, 'bus-shelter-city', 17 * TILE, 6 * TILE + 14);
+  placeProp(ctx, 'ticket-machine', 20 * TILE + 4, 6 * TILE + 14);
+  placeProp(ctx, 'city-bench', 22 * TILE, 6 * TILE + 14);
+  placeProp(ctx, 'bus', 13 * TILE, 8 * TILE + 8);
+  placeProp(ctx, 'bus-7', 1 * TILE, 10 * TILE);
+  placeChar(ctx, LOOKS[0].a, 'adult', 18 * TILE, 6 * TILE + 14, 0, 0);
+  ctx.drawImage(drawFx('music'), 18 * TILE, 6 * TILE + 14 - 40);
+  show(g, c, 'downtown mock');
+}
+{
   const g = section('Item icons');
-  const ids = [...Object.keys(ITEMS), 'notebook', 'appointment-slip', 'coin', 'receipt', 'unknown-thing'];
+  const NEW_ITEMS = [
+    'house-keys',
+    'bus-ticket',
+    'library-book',
+    'letter',
+    'parcel',
+    'carrot',
+    'onion',
+    'chopped-veg',
+    'soup-bowl',
+    'plates',
+    'white-shirt',
+    'pink-shirt',
+    'red-sock',
+    'banknote',
+    'coins',
+    'detergent',
+    'clothes-pile',
+    'cooking-pot',
+    'receipt',
+    'bread',
+  ];
+  const ids = [
+    ...new Set([...Object.keys(ITEMS), 'notebook', 'appointment-slip', 'coin', ...NEW_ITEMS, 'unknown-thing']),
+  ];
   for (const id of ids) show(g, drawItemIcon(id), id, 4);
 }
 {

@@ -5,8 +5,9 @@ import type { LocationId } from '../domain/types';
 
 export interface BusEvents {
   game: GameEvent;
-  fx: { kind: 'heart' | 'cloud' | 'sparkle' | 'coin'; target?: string; x?: number; y?: number };
-  scene: { goto: LocationId };
+  /** kind = any fx texture key (heart, cloud, sparkle, coin, steam, smoke, bubble, check, music…) */
+  fx: { kind: string; target?: string; x?: number; y?: number };
+  scene: { goto: LocationId; spawn?: string };
 }
 
 type Handler<T> = (payload: T) => void;

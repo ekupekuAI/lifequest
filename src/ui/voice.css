@@ -1,0 +1,201 @@
+/* Voice, settings & accessibility styles (LifeQuest v2). */
+
+/* ---------- text size ----------
+   The base stylesheet uses px font sizes throughout, so scaling the root font-size alone
+   would do nothing. Every px font-size rule from styles.css is re-declared below as
+   calc(Npx * var(--text-scale)), only when <html data-textscale> is set (scale != 100%). */
+:root { --text-scale: 1; font-size: calc(16px * var(--text-scale, 1)); }
+:root[data-textscale] body { font-size: calc(20px * var(--text-scale, 1)); }
+:root[data-textscale] .label, :root[data-textscale] .eyebrow { font-size: calc(8px * var(--text-scale, 1)); }
+:root[data-textscale] .small { font-size: calc(17px * var(--text-scale, 1)); }
+:root[data-textscale] .tiny { font-size: calc(15px * var(--text-scale, 1)); }
+:root[data-textscale] .btn { font-size: calc(9px * var(--text-scale, 1)); }
+:root[data-textscale] .btn-sm { font-size: calc(8px * var(--text-scale, 1)); }
+:root[data-textscale] .btn-lg { font-size: calc(11px * var(--text-scale, 1)); }
+:root[data-textscale] .icon-btn { font-size: calc(14px * var(--text-scale, 1)); }
+:root[data-textscale] .key { font-size: calc(8px * var(--text-scale, 1)); }
+:root[data-textscale] .pill { font-size: calc(8px * var(--text-scale, 1)); }
+:root[data-textscale] .stars { font-size: calc(16px * var(--text-scale, 1)); }
+:root[data-textscale] input[type='text'], :root[data-textscale] input[type='number'], :root[data-textscale] select, :root[data-textscale] textarea { font-size: calc(20px * var(--text-scale, 1)); }
+:root[data-textscale] .check { font-size: calc(13px * var(--text-scale, 1)); }
+:root[data-textscale] .tagline { font-size: calc(26px * var(--text-scale, 1)); }
+:root[data-textscale] .start-foot { font-size: calc(18px * var(--text-scale, 1)); }
+:root[data-textscale] .chip { font-size: calc(18px * var(--text-scale, 1)); }
+:root[data-textscale] .mission-card .m-icon { font-size: calc(20px * var(--text-scale, 1)); }
+:root[data-textscale] .mission-card .m-title { font-size: calc(9px * var(--text-scale, 1)); }
+:root[data-textscale] .obj { font-size: calc(18px * var(--text-scale, 1)); }
+:root[data-textscale] .obj.current::before { font-size: calc(11px * var(--text-scale, 1)); }
+:root[data-textscale] .obj-sub { font-size: calc(15px * var(--text-scale, 1)); }
+:root[data-textscale] .mission-card.free { font-size: calc(18px * var(--text-scale, 1)); }
+:root[data-textscale] .stat-chip { font-size: calc(20px * var(--text-scale, 1)); }
+:root[data-textscale] .stat-chip .label { font-size: calc(7px * var(--text-scale, 1)); }
+:root[data-textscale] .clock { font-size: calc(10px * var(--text-scale, 1)); }
+:root[data-textscale] .money { font-size: calc(22px * var(--text-scale, 1)); }
+:root[data-textscale] .level-badge { font-size: calc(9px * var(--text-scale, 1)); }
+:root[data-textscale] .hud-actions .btn { font-size: calc(8px * var(--text-scale, 1)); }
+:root[data-textscale] .prompt { font-size: calc(20px * var(--text-scale, 1)); }
+:root[data-textscale] .slot .qty { font-size: calc(7px * var(--text-scale, 1)); }
+:root[data-textscale] .slot.empty::after { font-size: calc(6px * var(--text-scale, 1)); }
+:root[data-textscale] .basket-chip { font-size: calc(18px * var(--text-scale, 1)); }
+:root[data-textscale] .dlg-name { font-size: calc(9px * var(--text-scale, 1)); }
+:root[data-textscale] .dlg-text { font-size: calc(23px * var(--text-scale, 1)); }
+:root[data-textscale] .dlg-more { font-size: calc(18px * var(--text-scale, 1)); }
+:root[data-textscale] .choice { font-size: calc(20px * var(--text-scale, 1)); }
+:root[data-textscale] .choice .num { font-size: calc(8px * var(--text-scale, 1)); }
+:root[data-textscale] .choice .hint { font-size: calc(16px * var(--text-scale, 1)); }
+:root[data-textscale] .qp .qp-name { font-size: calc(6px * var(--text-scale, 1)); }
+:root[data-textscale] .counter { font-size: calc(18px * var(--text-scale, 1)); }
+:root[data-textscale] .queue-log { font-size: calc(17px * var(--text-scale, 1)); }
+:root[data-textscale] .toast { font-size: calc(19px * var(--text-scale, 1)); }
+:root[data-textscale] .feedback .fb-icon { font-size: calc(10px * var(--text-scale, 1)); }
+:root[data-textscale] .feedback .fb-text { font-size: calc(19px * var(--text-scale, 1)); }
+:root[data-textscale] .modal-icon { font-size: calc(22px * var(--text-scale, 1)); }
+:root[data-textscale] .modal-title { font-size: calc(11px * var(--text-scale, 1)); }
+:root[data-textscale] .section > h3 { font-size: calc(8px * var(--text-scale, 1)); }
+:root[data-textscale] .bullets li { font-size: calc(19px * var(--text-scale, 1)); }
+:root[data-textscale] .kv b { font-size: calc(22px * var(--text-scale, 1)); }
+:root[data-textscale] .quote .bubble { font-size: calc(21px * var(--text-scale, 1)); }
+:root[data-textscale] .quote .who { font-size: calc(7px * var(--text-scale, 1)); }
+:root[data-textscale] .tab { font-size: calc(8px * var(--text-scale, 1)); }
+:root[data-textscale] table.tbl { font-size: calc(18px * var(--text-scale, 1)); }
+:root[data-textscale] .tbl th { font-size: calc(7px * var(--text-scale, 1)); }
+:root[data-textscale] .product .p-name { font-size: calc(20px * var(--text-scale, 1)); }
+:root[data-textscale] .product .p-tag { font-size: calc(6px * var(--text-scale, 1)); }
+:root[data-textscale] .product .p-price { font-size: calc(24px * var(--text-scale, 1)); }
+:root[data-textscale] .product .p-cmp { font-size: calc(15px * var(--text-scale, 1)); }
+:root[data-textscale] .stepper .q { font-size: calc(22px * var(--text-scale, 1)); }
+:root[data-textscale] .stamp { font-size: calc(8px * var(--text-scale, 1)); }
+:root[data-textscale] .totals .big { font-size: calc(28px * var(--text-scale, 1)); }
+:root[data-textscale] .checklist li { font-size: calc(18px * var(--text-scale, 1)); }
+:root[data-textscale] .score-ring { font-size: calc(18px * var(--text-scale, 1)); }
+:root[data-textscale] .score-ring small { font-size: calc(6px * var(--text-scale, 1)); }
+:root[data-textscale] .result-hero h3 { font-size: calc(12px * var(--text-scale, 1)); }
+:root[data-textscale] .badge-earned { font-size: calc(8px * var(--text-scale, 1)); }
+:root[data-textscale] .dim-row { font-size: calc(18px * var(--text-scale, 1)); }
+:root[data-textscale] .radar text { font-size: calc(15px * var(--text-scale, 1)); }
+:root[data-textscale] .tl-item .t { font-size: calc(16px * var(--text-scale, 1)); }
+:root[data-textscale] .tl-item .d { font-size: calc(19px * var(--text-scale, 1)); }
+:root[data-textscale] .tl-item .c { font-size: calc(17px * var(--text-scale, 1)); }
+:root[data-textscale] .lesson { font-size: calc(19px * var(--text-scale, 1)); }
+:root[data-textscale] .note { font-size: calc(19px * var(--text-scale, 1)); }
+:root[data-textscale] .note .n-title { font-size: calc(9px * var(--text-scale, 1)); }
+:root[data-textscale] .note .n-meta { font-size: calc(16px * var(--text-scale, 1)); }
+:root[data-textscale] .note .n-tag { font-size: calc(6px * var(--text-scale, 1)); }
+:root[data-textscale] .tpl-head .t { font-size: calc(8px * var(--text-scale, 1)); }
+:root[data-textscale] .member-btn { font-size: calc(18px * var(--text-scale, 1)); }
+:root[data-textscale] .tutorial h2 { font-size: calc(11px * var(--text-scale, 1)); }
+:root[data-textscale] .ctrl-list { font-size: calc(19px * var(--text-scale, 1)); }
+:root[data-textscale] .act { font-size: calc(32px * var(--text-scale, 1)); }
+:root[data-textscale] .touch-mini .icon-btn { font-size: calc(18px * var(--text-scale, 1)); }
+@media (max-width: 560px) {
+  :root[data-textscale] body { font-size: calc(19px * var(--text-scale, 1)); }
+  :root[data-textscale] .obj { font-size: calc(17px * var(--text-scale, 1)); }
+  :root[data-textscale] .dlg-text { font-size: calc(21px * var(--text-scale, 1)); }
+}
+
+
+/* ---------- colour-safe mode ----------
+   Swap the red/green tone pair for blue/orange (Okabe-Ito inspired) so good/bad
+   never relies on telling red from green. */
+:root[data-colorsafe='1'] {
+  --mint: #56b4e9;
+  --mint-d: #1f6fae;
+  --coral: #ff8a1f;
+  --coral-d: #b35500;
+}
+:root[data-colorsafe='1'] .warn { color: var(--gold); }
+:root[data-colorsafe='1'] .pill.good { color: #eef7ff; }
+:root[data-colorsafe='1'] .pill.bad { color: #fff3e6; }
+:root[data-colorsafe='1'] .toast.bad { color: #ffe3c4; }
+:root[data-colorsafe='1'] .choice.good::after,
+:root[data-colorsafe='1'] .choice.bad::after { font-family: var(--display); font-size: 8px; margin-left: auto; align-self: center; padding-left: 6px; }
+:root[data-colorsafe='1'] .choice.good::after { content: '+'; color: var(--mint); }
+:root[data-colorsafe='1'] .choice.bad::after { content: '!'; color: var(--coral); }
+
+/* ---------- dialogue: voice tools & speaking portrait ---------- */
+.dlg-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.dlg-head .dlg-name { flex: 1; min-width: 0; }
+.dlg-tools { display: flex; gap: 4px; margin-left: auto; flex: none; margin-top: -2px; }
+.dlg-tool {
+  display: grid; place-items: center; width: 28px; height: 28px; padding: 0;
+  background: var(--panel-2); border: 2px solid var(--ink); box-shadow: inset 0 0 0 1px var(--frame);
+  border-radius: 2px; font-size: 14px; line-height: 1; color: var(--text); touch-action: manipulation;
+}
+.dlg-tool:hover { background: var(--panel-3); }
+.dlg-tool[aria-pressed='true'] { background: var(--coral-d); }
+.dlg-portrait { position: relative; }
+.dlg-portrait.speaking { box-shadow: inset 0 0 0 2px var(--orange); }
+.dlg-portrait.speaking img { animation: vs-talk 0.32s steps(2, end) infinite; transform-origin: 50% 100%; }
+.vs-wave { position: absolute; right: 3px; bottom: 3px; display: flex; gap: 2px; align-items: flex-end; height: 12px; }
+.vs-wave i { display: block; width: 3px; background: var(--gold); border: 1px solid var(--ink); animation: vs-bar 0.5s steps(3, end) infinite; }
+.vs-wave i:nth-child(1) { height: 6px; }
+.vs-wave i:nth-child(2) { height: 11px; animation-delay: -0.2s; }
+.vs-wave i:nth-child(3) { height: 8px; animation-delay: -0.35s; }
+.dlg-name .vs-dot { display: inline-block; width: 6px; height: 6px; margin-left: 6px; background: var(--gold); vertical-align: middle; animation: vs-blink 0.6s steps(2, end) infinite; }
+@keyframes vs-talk { 50% { transform: translateY(-1px) scaleY(1.03); } }
+@keyframes vs-bar { 50% { transform: scaleY(0.4); } }
+@keyframes vs-blink { 50% { opacity: 0.25; } }
+@media (prefers-reduced-motion: reduce) {
+  .dlg-portrait.speaking img, .vs-wave i, .dlg-name .vs-dot { animation: none; }
+}
+
+/* ---------- settings ---------- */
+.vs-modal .modal-body { display: flex; flex-direction: column; gap: 12px; }
+.vs-section { display: flex; flex-direction: column; gap: 8px; padding-bottom: 12px; border-bottom: 2px dashed var(--panel-3); }
+.vs-section:last-child { border-bottom: none; padding-bottom: 0; }
+.vs-section > h3 { font-family: var(--display); font-size: 8px; color: var(--orange); text-transform: uppercase; line-height: 1.6; }
+.vs-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 32px; }
+.vs-row > span:first-child { flex: 1; min-width: 0; }
+.vs-seg { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.vs-opt {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 7px 8px; text-align: left; min-height: 44px;
+  background: var(--panel-2); border: 2px solid var(--ink); box-shadow: inset 0 0 0 1px var(--frame); border-radius: 2px;
+  font-size: 18px; line-height: 1.05; touch-action: manipulation; transition: transform 90ms, background 90ms;
+}
+.vs-opt:hover { transform: translateY(-1px); }
+.vs-opt[aria-checked='true'] { background: var(--sky-d); box-shadow: inset 0 0 0 2px var(--focus); }
+.vs-opt:disabled { opacity: 0.55; transform: none; }
+.vs-opt .vs-opt-title { font-family: var(--display); font-size: 8px; line-height: 1.5; color: var(--gold); text-transform: uppercase; }
+.vs-opt .vs-opt-sub { font-size: 16px; color: var(--muted); }
+.vs-opt .vs-flag { font-size: 22px; line-height: 1; }
+.vs-regions { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 6px; }
+.vs-regions .vs-opt { flex-direction: row; align-items: center; gap: 8px; }
+.vs-diffs { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 6px; }
+.vs-range { display: flex; align-items: center; gap: 8px; }
+.vs-range input[type='range'] { flex: 1; min-width: 0; accent-color: var(--orange); height: 24px; }
+.vs-range output { min-width: 44px; text-align: right; font-size: 18px; color: var(--gold); }
+.vs-note { font-size: 16px; color: var(--muted); line-height: 1.1; }
+.vs-readonly { display: flex; align-items: center; gap: 8px; padding: 6px 8px; background: var(--ink); border: 2px solid var(--panel-3); }
+.vs-readonly .vs-flag { font-size: 22px; }
+.vs-switch { min-width: 58px; }
+
+/* ---------- family setup: voice controls ---------- */
+.vs-member { display: flex; flex-direction: column; gap: 6px; }
+.vs-member .name-row { align-items: flex-end; }
+.vs-voice-btn { flex: none; min-height: 34px; }
+.vs-voice {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; padding: 8px 10px;
+  background: var(--ink); border: 2px solid var(--panel-3); margin-left: 44px;
+}
+.vs-voice .vs-wide { grid-column: 1 / -1; }
+.vs-voice select { width: 100%; font-size: 18px; min-height: 32px; background: var(--panel-2); border: 2px solid var(--ink); box-shadow: inset 0 0 0 1px var(--frame); color: var(--text); padding: 2px 6px; }
+.vs-voice-actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.vs-names .names { display: flex; flex-direction: column; gap: 8px; }
+
+@media (max-width: 560px) {
+  .vs-seg { grid-template-columns: 1fr; }
+  .vs-voice { grid-template-columns: 1fr; margin-left: 0; }
+  .vs-regions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dlg-tool { width: 26px; height: 26px; }
+}
+
+/* title screen footer region chip */
+.start-region { background: none; border: none; padding: 0 2px; color: var(--gold); text-shadow: 1px 1px 0 var(--ink); font-size: inherit; text-decoration: underline dotted; text-underline-offset: 3px; }
+.start-region:hover { color: var(--text); }
+
+/* text scale for the styles in this file */
+:root[data-textscale] .vs-section > h3, :root[data-textscale] .vs-opt .vs-opt-title { font-size: calc(8px * var(--text-scale, 1)); }
+:root[data-textscale] .vs-note, :root[data-textscale] .vs-opt .vs-opt-sub { font-size: calc(16px * var(--text-scale, 1)); }
+:root[data-textscale] .vs-opt, :root[data-textscale] .vs-range output, :root[data-textscale] .vs-voice select { font-size: calc(18px * var(--text-scale, 1)); }
+:root[data-textscale] .vs-opt .vs-flag, :root[data-textscale] .vs-readonly .vs-flag { font-size: calc(22px * var(--text-scale, 1)); }
+:root[data-textscale] .dlg-tool { font-size: calc(14px * var(--text-scale, 1)); width: calc(28px * var(--text-scale, 1)); height: calc(28px * var(--text-scale, 1)); }

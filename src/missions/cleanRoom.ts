@@ -64,9 +64,9 @@ export const cleanRoom: MissionDef = {
   ],
   objectives: [
     { id: 'receive', label: 'Hear what needs to be done', type: 'talk', required: true },
-    { id: 'tidy', label: 'Put every item where it belongs', type: 'place', required: true },
-    { id: 'bed', label: 'Make the bed (optional)', type: 'inspect', required: false },
-    { id: 'report', label: 'Ask {assigner} to inspect the room', type: 'talk', required: true, dependsOn: ['tidy'] },
+    { id: 'tidy', label: 'Put every item where it belongs', type: 'place', required: true, where: { location: 'home', target: 'laundry' }, hint: 'Clothes → laundry basket, books → shelf, paper → bin, toys → toy box, dishes → kitchen sink.' },
+    { id: 'bed', label: 'Make the bed (optional)', type: 'inspect', required: false, where: { location: 'home', target: 'bed' } },
+    { id: 'report', label: 'Ask {assigner} to inspect the room', type: 'talk', required: true, dependsOn: ['tidy'], where: { location: 'home', target: 'assigner' } },
   ],
   deadlineMinutes: 30,
   lateRule: 'partial',
