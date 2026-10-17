@@ -196,6 +196,7 @@ export default function StartScreen({ parentOpen = false }: { parentOpen?: boole
           <span className="dim">·</span>
           <span>Practice real-life skills, one task at a time.</span>
         </div>
+        <p className="start-copyright tiny dim">© 2026 Ekansh and Sania Thasneem · LifeQuest™ · All rights reserved.</p>
       </main>
 
       {overlay === 'settings' && <SettingsModal onClose={() => setOverlay(null)} inGame={false} />}

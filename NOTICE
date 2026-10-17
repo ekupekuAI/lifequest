@@ -1,0 +1,26 @@
+LifeQuest: Real Life, Your Rules
+Copyright (c) 2026 Ekansh and Sania Thasneem. All rights reserved.
+
+This product includes or uses the following third-party software and services,
+each under its own license or terms:
+
+- Phaser 3 (game engine) — MIT License — https://phaser.io
+- React and React DOM — MIT License — https://react.dev
+- Three.js — MIT License — https://threejs.org
+- Vite — MIT License — https://vitejs.dev
+- Vitest — MIT License — https://vitest.dev
+- Supabase JS client — MIT License — https://supabase.com
+- TypeScript — Apache License 2.0 — https://www.typescriptlang.org
+
+Fonts (loaded from Google Fonts):
+- Press Start 2P — SIL Open Font License 1.1
+- VT323 — SIL Open Font License 1.1
+
+Services:
+- Character voices are generated with ElevenLabs (https://elevenlabs.io) and
+  are subject to the ElevenLabs Terms of Service.
+- Backend and storage are provided by Supabase (https://supabase.com).
+- Hosting is provided by GitHub Pages.
+
+All pixel art, music and sound effects in LifeQuest are generated in code by
+the authors; no third-party art or audio assets are included.

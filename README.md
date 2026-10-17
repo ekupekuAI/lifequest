@@ -173,3 +173,11 @@ See the final section of the delivery notes, or the "Known limitations" list bel
 - 3D mode on low-end phones and the newest plot twists have only been tested in desktop browsers.
 
 LifeQuest simulates real situations for practice. Doing well in the game doesn't guarantee the same results in real life.
+
+## Copyright
+
+© 2026 **Ekansh and Sania Thasneem**. All rights reserved.
+
+LifeQuest™, including its source code, procedurally generated artwork, music, mission designs and written content, is the original work of Ekansh and Sania Thasneem. No part of it may be copied, modified or distributed without written permission. See [LICENSE](LICENSE).
+
+Built with Phaser, React, Three.js, Vite and Supabase JS (MIT licensed). The fonts Press Start 2P and VT323 are used under the SIL Open Font License. Character voices are generated with ElevenLabs (elevenlabs.io). Full credits are in [NOTICE](NOTICE).
