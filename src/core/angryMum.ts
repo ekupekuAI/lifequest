@@ -11,6 +11,8 @@
 // (setAngryStage) to play the visuals. With no stage (tests, away from home) the show
 // does not start and callers fall back to their usual scolding.
 import type { ConductKind, FamilyMember, Memory, Role } from '../domain/types';
+import { DEST_LABELS, ROOM_OBJECTS } from '../domain/homeLayout';
+import { itemName } from '../domain/items';
 import { region, words } from '../domain/region';
 import { scheduleFor } from '../domain/world';
 import { availableGuardian, conduct, recordConduct } from './conduct';
@@ -322,6 +324,12 @@ export interface AngryStage {
   bubble(memberId: string, text: string | null, loud?: boolean): void;
   /** distance from the player to her (null when not in this scene) */
   distanceTo(memberId: string): number | null;
+  /** CHORE DUTY: phone + TV remote fly from the player into her hands (optional) */
+  confiscate?(memberId: string, done: () => void): void;
+  /** CHORE DUTY: start / stop following & monitoring the player (optional) */
+  duty?(memberId: string, on: boolean): void;
+  /** CHORE DUTY reactions: huff (slacking), soften (calming down), block (the front door) */
+  dutyFx?(memberId: string, kind: 'huff' | 'soften' | 'block' | 'nod'): void;
 }
 
 let stage: AngryStage | null = null;
@@ -363,7 +371,7 @@ export const angryPhase = (s: GameStore): Phase => rt(s).phase;
 export const angryActive = (s: GameStore) => !['idle', 'cool'].includes(rt(s).phase);
 /** From the trigger until the cool-down (making up) ends — used to block plot twists. */
 export const angryMumActive = (s: GameStore) => rt(s).phase !== 'idle';
-twistBlockers.push((s) => angryMumActive(s));
+twistBlockers.push((s) => angryMumActive(s) || choreDutyActive(s));
 export const angryMember = (s: GameStore) => (rt(s).memberId ? s.member(rt(s).memberId!) : undefined);
 export function callInfo(s: GameStore): { memberId: string; level: 1 | 2; leftMs: number; windowMs: number } | null {
   const c = rt(s).call;
@@ -419,6 +427,7 @@ export interface TriggerOpts {
 export function triggerAngry(s: GameStore, trigger: AngryTrigger, opts: TriggerOpts = {}): boolean {
   const r = rt(s);
   if (r.phase !== 'idle' && r.phase !== 'cool') return false;
+  if (choreDutyActive(s)) return false; // already on chore duty
   if (!opts.force && !canGetAngry(gateOf(s), today(s), now(s))) return false;
   const g = guardianAtHome(s);
   if (!g || !stage || !stage.ready(g.id)) return false;
@@ -628,7 +637,9 @@ function finish(s: GameStore, path: AngryPath) {
   if (!g) return abort(s);
   const info = TRIGGERS[r.trigger];
   const plan = pickConsequences(path, r.trigger, r.seed);
-  applyConsequences(s, plan, g);
+  // after a lecture: CHORE DUTY replaces the instant chore / phone / TV consequences
+  const duty = DUTY_PATHS.includes(path) && !!stage && stage.ready(g.id);
+  applyConsequences(s, duty ? { ...plan, list: plan.list.filter((c) => c.kind === 'early-bed') } : plan, g);
   const how = { apology: 'apologised sincerely', explained: 'explained calmly (it was not their fault)', lecture: 'got a lecture', talkback: 'talked back and got a lecture', caught: 'ran away, got caught and got a lecture', 'came-back': 'hid, but got the lecture later anyway' }[path];
   recordConduct(
     s,
@@ -649,7 +660,14 @@ function finish(s: GameStore, path: AngryPath) {
   const lesson = path === 'apology' || path === 'explained' ? LESSONS[1] : path === 'caught' || path === 'came-back' ? LESSONS[0] : LESSONS[2];
   stage?.calm(g.id);
   r.phase = 'cool';
-  r.makeUpAt = path === 'explained' ? null : now(s) + ANGRY.makeUpMin;
+  r.makeUpAt = path === 'explained' || duty ? null : now(s) + ANGRY.makeUpMin;
+  if (duty) {
+    s.showFeedback(lesson, 'bad');
+    const lines: DialogueLine[] = [];
+    if (plan.list.some((c) => c.kind === 'early-bed')) lines.push(line(g, 'And tonight it is lights out at nine. An early night fixes the snoozing.', 'calm'));
+    lines.push({ speaker: '', text: `Lesson: ${lesson}` });
+    return s.say(lines, () => startChoreDuty(s, { path, memberId: g.id, severe: plan.severity >= 3 }));
+  }
   const lines: DialogueLine[] = [];
   if (plan.list.length) lines.push(line(g, consequenceLines(plan), 'calm'));
   if (plan.list.some((c) => c.kind === 'early-bed')) lines.push(line(g, 'And tonight it is lights out at nine. An early night fixes the snoozing.', 'calm'));
@@ -714,7 +732,7 @@ function clearCall(s: GameStore) {
 /** Mum calls you over: you have 20 real seconds to come. Returns true if a call started. */
 export function startCall(s: GameStore, force = false): boolean {
   const r = rt(s);
-  if (r.call || r.phase !== 'idle' || s.blocking) return false;
+  if (r.call || r.phase !== 'idle' || s.blocking || choreDutyActive(s)) return false;
   const g = guardianAtHome(s);
   if (!g || !stage || !stage.ready(g.id)) return false;
   const calls = counter(s, 'calls');
@@ -846,9 +864,478 @@ export function madeMess(s: GameStore): boolean {
   return !!t && triggerAngry(s, t);
 }
 
+// ---------------------------------------------------------------- CHORE DUTY (after the lecture)
+//
+// "No phone, no TV, no snacks until this house is spotless." Mum confiscates the phone and the
+// TV remote, hands out a chore list (picked by time of day), follows the player around with
+// her arms crossed and an ANGER METER over her head. Finished chores cool her down; slacking
+// heats her up. Below ~20 (or with every chore done) she softens, gives everything back and
+// the usual making-up moment follows. State lives in world flags (`duty.*`), so it survives a
+// scene reload / save; it expires with the day. Still 100% non-physical.
+
+export type ChoreId = 'dishes' | 'clean-room' | 'sweep' | 'laundry' | 'trash';
+export type SlackKind = 'idle' | 'leave' | 'phone' | 'sofa' | 'snack' | 'bed';
+export type DutyEvent = { type: 'step' } | { type: 'chore'; quick: boolean } | { type: 'slack'; kind: SlackKind };
+
+export const CHORE_INFO: Record<ChoreId, { label: string; icon: string }> = {
+  dishes: { label: 'Wash the dishes', icon: '🧽' },
+  'clean-room': { label: 'Clean your room', icon: '🧺' },
+  sweep: { label: 'Sweep the living room', icon: '🧹' },
+  laundry: { label: 'Fold the laundry', icon: '👕' },
+  trash: { label: 'Take out the trash', icon: '🗑️' },
+};
+
+export const DUTY = {
+  /** plates to scrub, dust piles to sweep, shirts to fold */
+  dishes: 5,
+  dust: 3,
+  fold: 4,
+  /** real ms standing still before it counts as slacking */
+  idleMs: 15000,
+  /** real ms per chore that counts as "quick" (bonus cool-down) */
+  quickMs: 75000,
+  /** she softens below this anger */
+  endBelow: 20,
+  /** real ms between her comment bubbles */
+  commentMs: 8500,
+  /** anger drop per scrub / sweep / fold and per finished chore (+ quick bonus) */
+  stepDrop: 1,
+  choreDrop: 20,
+  quickBonus: 8,
+  /** anger added when slacking */
+  slack: { idle: 8, leave: 12, phone: 15, sofa: 10, snack: 5, bed: 6 } as Record<SlackKind, number>,
+  /** real ms before the same kind of slacking counts again */
+  slackGapMs: 4000,
+} as const;
+
+const DUTY_PATHS: AngryPath[] = ['lecture', 'talkback', 'caught', 'came-back'];
+const clamp100 = (n: number) => Math.max(0, Math.min(100, Math.round(n)));
+
+/** Anger at the start of chore duty (0–100), from how the episode went. */
+export function startAnger(path: AngryPath | 'demo'): number {
+  switch (path) {
+    case 'caught':
+    case 'came-back':
+      return 95;
+    case 'talkback':
+      return 88;
+    case 'lecture':
+      return 75;
+    default:
+      return 80;
+  }
+}
+
+/** 3 chores (4 when she is furious), picked by time of day; order varies with the seed. */
+export function pickChores(minutes: number, seed: number, anger: number): ChoreId[] {
+  const h = Math.floor((((minutes % 1440) + 1440) % 1440) / 60);
+  const pool: ChoreId[] =
+    h < 12 ? ['clean-room', 'dishes', 'trash', 'laundry'] : h < 17 ? ['sweep', 'laundry', 'clean-room', 'trash'] : h < 21 ? ['dishes', 'sweep', 'trash', 'clean-room'] : ['dishes', 'clean-room', 'laundry', 'sweep'];
+  const n = anger >= 90 ? 4 : 3;
+  const first = pool[0]; // the time-of-day chore always comes first (morning mess / dinner dishes…)
+  const rest = pool.slice(1);
+  const k = ((Math.floor(seed) % rest.length) + rest.length) % rest.length;
+  return [first, ...rest.slice(k), ...rest.slice(0, k)].slice(0, n);
+}
+
+/** Anger math: steps and chores cool her down (quick = bigger drop), slacking heats her up. */
+export function angerAfter(anger: number, ev: DutyEvent): number {
+  switch (ev.type) {
+    case 'step':
+      return clamp100(anger - DUTY.stepDrop);
+    case 'chore':
+      return clamp100(anger - DUTY.choreDrop - (ev.quick ? DUTY.quickBonus : 0));
+    case 'slack':
+      return clamp100(anger + DUTY.slack[ev.kind]);
+  }
+}
+
+/** She softens when she has cooled down — or when every chore is done. */
+export const dutyShouldEnd = (anger: number, choresLeft: number) => anger < DUTY.endBelow || choresLeft <= 0;
+
+/** 0 furious 😡 · 1 angry 😠 · 2 huffy 😤 · 3 okay 🙂 */
+export const angerStage = (anger: number): 0 | 1 | 2 | 3 => (anger >= 75 ? 0 : anger >= 50 ? 1 : anger >= DUTY.endBelow ? 2 : 3);
+export const angerFace = (anger: number) => ['😡', '😠', '😤', '🙂'][angerStage(anger)];
+export const dutyMood = (anger: number): 'angry' | 'stern' | 'calm' => (anger >= 60 ? 'angry' : anger >= 30 ? 'stern' : 'calm');
+
+export const DUTY_COMMENTS: Record<'angry' | 'stern' | 'calm', readonly string[]> = {
+  angry: ['Faster.', "I'm watching you.", "Don't even think about the phone.", 'You missed a spot.', 'Spotless. I said SPOTLESS.', 'Tick tock.', 'I can see you dawdling.'],
+  stern: ['Better…', 'Keep going.', 'You missed a spot.', "That's more like it… barely.", "Don't slow down now.", 'Mm-hm. Continue.'],
+  calm: ['Hmm. Not bad.', 'Almost there.', 'See? Not so hard.', 'Look at you go.', 'Okay… I see you trying.'],
+};
+export const SLACK_LINES: Record<SlackKind, readonly string[]> = {
+  idle: ['Hello?! Those chores will not do themselves!', 'Are we taking a little break? We are NOT.', 'Statues do not get their phones back.'],
+  leave: ["Where do you think you're going?", 'Nope. Nobody leaves until this house sparkles.', 'That door is closed. Like your phone privileges.'],
+  phone: ["Don't even think about the phone.", 'That phone is in MY pocket. Nice try.', 'Phone? What phone? Chores.'],
+  sofa: ['Sofa? SOFA?! Up. Now.', 'The remote is on a break. You are not.', 'No TV. Chores.'],
+  snack: ['Nice try.', 'Snacks are for people with clean houses.', 'The fridge is closed for business.'],
+  bed: ['Chores first.', 'Bed is AFTER the chores. Up you get.', 'Nice try. Chores first, sleep later.'],
+};
+
+interface DutyRt {
+  idleMs: number;
+  commentMs: number;
+  lastMs: number;
+  n: number;
+  slackAt: Partial<Record<SlackKind, number>>;
+  after?: () => void;
+}
+const DRT = new WeakMap<GameStore, DutyRt>();
+function drt(s: GameStore): DutyRt {
+  let r = DRT.get(s);
+  if (!r) DRT.set(s, (r = { idleMs: 0, commentMs: 0, lastMs: Date.now(), n: 0, slackAt: {} }));
+  return r;
+}
+
+const csv = (v: unknown) => (typeof v === 'string' && v ? (v.split(',') as ChoreId[]) : []);
+const dutyChores = (s: GameStore) => csv(W(s)['duty.chores']);
+const dutyDone = (s: GameStore) => csv(W(s)['duty.done']);
+const dutyBy = (s: GameStore) => (W(s)['duty.by'] ? s.member(String(W(s)['duty.by'])) : undefined);
+
+/** Chore duty is on (dinner / snacks / TV should be refused while it is). */
+export function choreDutyActive(s: GameStore): boolean {
+  return W(s)['duty.on'] === true && Number(W(s)['duty.day']) === today(s);
+}
+/** Current anger meter (0–100); 0 when there is no chore duty. */
+export function angerLevel(s: GameStore): number {
+  return choreDutyActive(s) ? clamp100(Number(W(s)['duty.anger'] ?? 0)) : 0;
+}
+export const dutyHas = (s: GameStore, c: ChoreId) => choreDutyActive(s) && dutyChores(s).includes(c) && !dutyDone(s).includes(c);
+export const dutyMember = (s: GameStore) => (choreDutyActive(s) ? dutyBy(s) : undefined);
+export const dishesLeft = (s: GameStore) => Number(W(s)['duty.dishes'] ?? 0);
+export const foldLeft = (s: GameStore) => Number(W(s)['duty.fold'] ?? 0);
+export const dustLeft = (s: GameStore, i: number) => String(W(s)['duty.dust'] ?? '').charAt(i) === '1';
+export const trashState = (s: GameStore) => String(W(s)['duty.trash'] ?? 'out') as 'bin' | 'held' | 'out';
+const roomLeft = (s: GameStore) => ROOM_OBJECTS.filter((o) => !['placed', 'hidden'].includes(String(W(s)[`room.${o.id}`] ?? 'floor'))).length;
+
+export interface DutyChoreView {
+  id: ChoreId;
+  label: string;
+  icon: string;
+  done: boolean;
+  /** e.g. "3/5" or "done" */
+  progress: string;
+}
+/** What the floating checklist shows. */
+export function dutyView(s: GameStore): { memberId: string; anger: number; face: string; chores: DutyChoreView[] } | null {
+  if (!choreDutyActive(s)) return null;
+  const done = dutyDone(s);
+  const dust = (String(W(s)['duty.dust'] ?? '').match(/1/g) ?? []).length;
+  const chores = dutyChores(s).map((id): DutyChoreView => {
+    const d = done.includes(id);
+    const progress =
+      id === 'dishes'
+        ? `${DUTY.dishes - dishesLeft(s)}/${DUTY.dishes}`
+        : id === 'sweep'
+          ? `${DUTY.dust - dust}/${DUTY.dust}`
+          : id === 'laundry'
+            ? `${DUTY.fold - foldLeft(s)}/${DUTY.fold}`
+            : id === 'clean-room'
+              ? `${ROOM_OBJECTS.length - roomLeft(s)}/${ROOM_OBJECTS.length}`
+              : trashState(s) === 'held'
+                ? '1/2'
+                : '0/2';
+    return { id, label: CHORE_INFO[id].label, icon: CHORE_INFO[id].icon, done: d, progress: d ? 'done' : progress };
+  });
+  const anger = angerLevel(s);
+  return { memberId: String(W(s)['duty.by']), anger, face: angerFace(anger), chores };
+}
+
+export interface DutyOpts {
+  path?: AngryPath | 'demo';
+  memberId?: string;
+  anger?: number;
+  severe?: boolean;
+  /** run when chore duty is over */
+  after?: () => void;
+}
+
+/** Start chore duty (after the lecture, or directly via the dev hook). */
+export function startChoreDuty(s: GameStore, opts: DutyOpts = {}): boolean {
+  if (choreDutyActive(s)) return false;
+  const g = opts.memberId ? s.member(opts.memberId) : guardianAtHome(s);
+  if (!g) return false;
+  const r = rt(s);
+  const path = opts.path ?? 'demo';
+  const anger = clamp100(opts.anger ?? startAnger(path));
+  const chores = pickChores(now(s), today(s) * 7 + Math.floor(now(s)), anger);
+  const w = W(s);
+  Object.assign(w, {
+    'duty.on': true,
+    'duty.day': today(s),
+    'duty.by': g.id,
+    'duty.anger': anger,
+    'duty.chores': chores.join(','),
+    'duty.done': '',
+    'duty.severe': !!(opts.severe ?? (path === 'caught' || path === 'came-back' || path === 'talkback')),
+    'duty.dishes': chores.includes('dishes') ? DUTY.dishes : 0,
+    'duty.dust': chores.includes('sweep') ? '1'.repeat(DUTY.dust) : '',
+    'duty.fold': chores.includes('laundry') ? DUTY.fold : 0,
+    'duty.trash': chores.includes('trash') ? 'bin' : 'out',
+  });
+  delete w['duty.doorWarned'];
+  if (chores.includes('clean-room')) {
+    // the bedroom is a disaster zone again (same objects as the clean-room mission)
+    for (const o of ROOM_OBJECTS) if (w[`room.${o.id}`] !== 'held') w[`room.${o.id}`] = 'floor';
+    w['room.bed'] = 'messy';
+  }
+  // the phone and the TV remote: confiscated until the house is spotless
+  const c = conduct(s);
+  c.phoneTakenUntil = Math.max(c.phoneTakenUntil ?? 0, now(s) + 24 * 60);
+  c.tvBanned = true;
+  if (r.phase === 'idle') r.phase = 'cool';
+  r.memberId = g.id;
+  r.makeUpAt = null;
+  Object.assign(drt(s), { idleMs: 0, commentMs: 0, lastMs: Date.now(), n: 0, slackAt: {}, after: opts.after ?? r.after });
+  r.after = undefined;
+  s.notify();
+  const declare = () => {
+    const names = chores.map((id) => CHORE_INFO[id].label.toLowerCase());
+    s.say(
+      [
+        line(g, 'No phone, no TV, no snacks until this house is spotless.', 'angry'),
+        { speaker: '', text: `🧹 CHORE DUTY: ${names.map((n, i) => `${i + 1}) ${n}`).join('  ')}. ${g.name} will be watching… very closely.` },
+      ],
+      () => {
+        stage?.duty?.(g.id, true);
+        s.toast(`🧹 Chore duty: ${chores.map((id) => `${CHORE_INFO[id].icon} ${CHORE_INFO[id].label}`).join(' · ')}`, 'neutral');
+      },
+    );
+  };
+  if (stage?.confiscate && stage.ready(g.id)) stage.confiscate(g.id, declare);
+  else declare();
+  return true;
+}
+
+/** Dev/demo: start chore duty right now. */
+export function demoChores(s: GameStore): boolean {
+  if (choreDutyActive(s) || angryActive(s)) return false;
+  const g = guardianAtHome(s);
+  return !!g && startChoreDuty(s, { path: 'demo', memberId: g.id });
+}
+
+function setAnger(s: GameStore, ev: DutyEvent): number {
+  const before = angerLevel(s);
+  const after = angerAfter(before, ev);
+  W(s)['duty.anger'] = after;
+  const g = dutyBy(s);
+  if (g && angerStage(after) > angerStage(before)) stage?.dutyFx?.(g.id, 'soften');
+  return after;
+}
+
+function bubbleLine(s: GameStore, text: string, loud = false) {
+  const g = dutyBy(s);
+  if (g) stage?.bubble(g.id, fill(s, text, g), loud);
+}
+
+/** Slacking during chore duty: anger goes up and she reacts. Returns her line (null = too soon, ignored). */
+export function choreSlack(s: GameStore, kind: SlackKind): string | null {
+  if (!choreDutyActive(s)) return null;
+  const d = drt(s);
+  const t = Date.now();
+  if ((d.slackAt[kind] ?? -Infinity) > t - DUTY.slackGapMs) return null;
+  d.slackAt[kind] = t;
+  d.idleMs = 0;
+  setAnger(s, { type: 'slack', kind });
+  const g = dutyBy(s);
+  const text = fill(s, pick(SLACK_LINES[kind], d.n++), g);
+  if (g) {
+    stage?.dutyFx?.(g.id, kind === 'leave' ? 'block' : 'huff');
+    if (kind === 'leave' && !W(s)['duty.doorWarned']) {
+      W(s)['duty.doorWarned'] = true;
+      s.say([line(g, "Where do you think you're going? Back inside. Chores.", 'stern')]);
+    } else bubbleLine(s, text, true);
+  }
+  return text;
+}
+
+function completeChore(s: GameStore, id: ChoreId) {
+  const done = dutyDone(s);
+  if (done.includes(id)) return;
+  W(s)['duty.done'] = [...done, id].join(',');
+  const d = drt(s);
+  const quick = Date.now() - d.lastMs < DUTY.quickMs;
+  d.lastMs = Date.now();
+  const anger = setAnger(s, { type: 'chore', quick });
+  s.skill('household', 1);
+  const total = dutyChores(s).length;
+  const left = total - done.length - 1;
+  s.toast(`✅ ${CHORE_INFO[id].label} — done${quick ? ' (quick!)' : ''} (${total - left}/${total})`, 'good');
+  if (dutyShouldEnd(anger, left)) return endChoreDuty(s, 'done');
+  bubbleLine(s, quick ? pick(['Hmm. Not bad.', 'That was… fast. Good.', 'Okay. Next.'], d.n++) : pick(['Finally. Next one.', 'About time. Next.', 'Mm. Next.'], d.n++));
+}
+
+function step(s: GameStore, fx: string, target: string, minutes = 1) {
+  setAnger(s, { type: 'step' });
+  drt(s).idleMs = 0;
+  s.spendTime(minutes);
+  s.bus.emit('fx', { kind: fx, target });
+}
+
+/** Interactions during chore duty (targets `duty:*` that HomeScene adds). Returns true when handled. */
+export function choreInteract(s: GameStore, target: string): boolean {
+  if (!target.startsWith('duty:')) return false;
+  if (!choreDutyActive(s)) return true;
+  const w = W(s);
+  const [, what, arg] = target.split(':');
+  switch (what) {
+    case 'dish': {
+      if (!dutyHas(s, 'dishes')) return true;
+      const left = Math.max(0, dishesLeft(s) - 1);
+      w['duty.dishes'] = left;
+      step(s, 'bubble', target);
+      s.toast(`🧽 Scrub, scrub… (${DUTY.dishes - left}/${DUTY.dishes} plates)`, 'info');
+      if (left <= 0) completeChore(s, 'dishes');
+      return true;
+    }
+    case 'dust': {
+      const i = Number(arg);
+      if (!dutyHas(s, 'sweep') || !dustLeft(s, i)) return true;
+      const str = String(w['duty.dust'] ?? '').split('');
+      str[i] = '0';
+      w['duty.dust'] = str.join('');
+      step(s, 'smoke', target, 2);
+      const n = str.filter((x) => x === '1').length;
+      s.toast(`🧹 Swept! (${DUTY.dust - n}/${DUTY.dust} dust piles)`, 'info');
+      if (!n) completeChore(s, 'sweep');
+      return true;
+    }
+    case 'fold': {
+      if (!dutyHas(s, 'laundry')) return true;
+      const left = Math.max(0, foldLeft(s) - 1);
+      w['duty.fold'] = left;
+      step(s, 'sparkle', target);
+      s.toast(`👕 Folded! (${DUTY.fold - left}/${DUTY.fold})`, 'info');
+      if (left <= 0) completeChore(s, 'laundry');
+      return true;
+    }
+    case 'trash':
+      if (!dutyHas(s, 'trash') || trashState(s) !== 'bin') return true;
+      w['duty.trash'] = 'held';
+      step(s, 'sparkle', target);
+      s.toast('🗑️ Got the trash bag. Take it to the front door.', 'info');
+      return true;
+    case 'trash-out':
+      if (!dutyHas(s, 'trash') || trashState(s) !== 'held') return true;
+      w['duty.trash'] = 'out';
+      step(s, 'sparkle', target);
+      bubbleLine(s, 'Out it goes. And straight back in.');
+      completeChore(s, 'trash');
+      return true;
+    case 'room': {
+      const o = ROOM_OBJECTS.find((x) => x.id === arg);
+      if (!o || !dutyHas(s, 'clean-room') || String(w[`room.${o.id}`] ?? 'floor') !== 'floor') return true;
+      if (s.hold(o.item)) {
+        w[`room.${o.id}`] = 'held';
+        drt(s).idleMs = 0;
+        s.spendTime(0.5);
+      }
+      return true;
+    }
+    case 'put': {
+      const dest = arg as (typeof ROOM_OBJECTS)[number]['dest'];
+      const held = ROOM_OBJECTS.filter((o) => w[`room.${o.id}`] === 'held');
+      const right = held.filter((o) => o.dest === dest);
+      const wrong = held.filter((o) => o.dest !== dest);
+      for (const o of right) {
+        w[`room.${o.id}`] = 'placed';
+        s.release(o.item);
+        setAnger(s, { type: 'step' });
+        s.spendTime(0.5);
+      }
+      drt(s).idleMs = 0;
+      if (right.length) {
+        s.bus.emit('fx', { kind: 'sparkle', target });
+        s.toast(`Put away: ${right.map((o) => itemName(o.item)).join(', ')} (${ROOM_OBJECTS.length - roomLeft(s)}/${ROOM_OBJECTS.length})`, 'good');
+      } else if (wrong.length) {
+        s.toast(`${wrong.map((o) => itemName(o.item)).join(' & ')} ${wrong.length > 1 ? "don't" : "doesn't"} go in the ${DEST_LABELS[dest]}.`, 'bad');
+        bubbleLine(s, 'Does that look right to you?');
+      }
+      if (dutyHas(s, 'clean-room') && roomLeft(s) === 0) completeChore(s, 'clean-room');
+      return true;
+    }
+    case 'no':
+      if (arg === 'bed' && dutyHas(s, 'clean-room') && w['room.bed'] !== 'made') {
+        w['room.bed'] = 'made';
+        s.spendTime(2, 'Made the bed');
+        setAnger(s, { type: 'step' });
+        s.bus.emit('fx', { kind: 'sparkle', target });
+        bubbleLine(s, 'Oh? Made the bed too? …Noted.');
+        return true;
+      }
+      if (choreSlack(s, arg === 'fridge' ? 'snack' : arg === 'bed' ? 'bed' : 'sofa') === null) bubbleLine(s, arg === 'fridge' ? 'Nice try.' : arg === 'bed' ? 'Chores first.' : 'No TV. Chores.');
+      return true;
+  }
+  return true;
+}
+
+/** Per-frame (real ms) while at home: slacking (standing still), comment bubbles, day expiry. */
+export function choreTick(s: GameStore, dtMs: number, moving: boolean) {
+  const w = W(s);
+  if (w['duty.on'] === true && Number(w['duty.day']) !== today(s)) return endChoreDuty(s, 'expired');
+  if (!choreDutyActive(s) || s.blocking || !stage) return;
+  const g = dutyBy(s);
+  if (!g || stage.distanceTo(g.id) === null) return; // she is not in this scene
+  const d = drt(s);
+  d.idleMs = moving ? 0 : d.idleMs + dtMs;
+  if (d.idleMs > DUTY.idleMs) choreSlack(s, 'idle');
+  d.commentMs += dtMs;
+  if (d.commentMs > DUTY.commentMs + (d.n % 3) * 1200) {
+    d.commentMs = 0;
+    bubbleLine(s, pick(DUTY_COMMENTS[dutyMood(angerLevel(s))], d.n++ * 3 + today(s)));
+  }
+}
+
+/** Chore duty is over: she softens, gives the phone & remote back, and the making-up can follow. */
+export function endChoreDuty(s: GameStore, how: 'done' | 'expired') {
+  const w = W(s);
+  if (w['duty.on'] !== true) return;
+  const g = dutyBy(s);
+  const severe = w['duty.severe'] === true;
+  const r = rt(s);
+  const d = drt(s);
+  const after = d.after;
+  d.after = undefined;
+  for (const k of Object.keys(w)) if (k.startsWith('duty.')) delete w[k];
+  if (g) stage?.duty?.(g.id, false);
+  if (how === 'expired' || !g) {
+    // a new day: yesterday's duty is over (conduct locks reset with the day anyway)
+    r.phase = 'idle';
+    s.notify();
+    return after?.();
+  }
+  // phone & remote back (a short wait after a really bad episode)
+  const c = conduct(s);
+  c.phoneTakenUntil = severe ? now(s) + 30 : undefined;
+  c.tvBanned = severe;
+  stage?.dutyFx?.(g.id, 'soften');
+  s.trust(g.id, 2);
+  s.skill('responsibility', 2);
+  recordConduct(s, { kind: 'respect', severity: 2, by: g.id, text: 'Did chore duty after Angry Mum Mode', lesson: 'Making it right with actions — not just words — rebuilds trust.' });
+  remember(s, {
+    id: `chores@${today(s)}`,
+    who: g.id,
+    kind: 'responsible',
+    text: 'After the big storm you scrubbed, swept and tidied without a fuss.',
+    effect: { type: 'trust', delta: 1, say: 'About the chores yesterday… you did them properly. That meant a lot to me.' },
+  });
+  r.phase = 'cool';
+  r.memberId = g.id;
+  r.makeUpAt = now(s) + 5; // the making-up moment ("I was angry, but I love you") follows soon
+  s.notify();
+  s.say(
+    [
+      line(g, "(arms uncross) Okay… that's better. Thank you.", 'calm'),
+      line(g, severe ? 'Phone back in half an hour. The TV stays off tonight — but you earned some trust back.' : 'Here. Phone. Remote. Use them wisely.', 'calm'),
+    ],
+    () => after?.(),
+  );
+}
+
 /** For tests: reset the runtime. */
 export function resetAngry(s: GameStore) {
   const r = rt(s);
   stopCount(r);
   RT.delete(s);
+  DRT.delete(s);
 }

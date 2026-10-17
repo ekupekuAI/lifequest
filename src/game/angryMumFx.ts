@@ -191,7 +191,174 @@ function pixel(): HTMLCanvasElement {
   return c;
 }
 
+// ---- CHORE DUTY props ----
+
+function phoneIcon(): HTMLCanvasElement {
+  const [c, ctx] = makeCanvas(6, 9);
+  rect(ctx, 0, 0, 6, 9, '#2a2a3a');
+  rect(ctx, 1, 1, 4, 6, '#5ad1ff');
+  px(ctx, 2, 2, '#c8f2ff');
+  px(ctx, 3, 8, '#8a8fa8');
+  outlineOuter(c, OUTLINE, 1);
+  return c;
+}
+
+function remoteIcon(): HTMLCanvasElement {
+  const [c, ctx] = makeCanvas(4, 10);
+  rect(ctx, 0, 0, 4, 10, '#3b3b48');
+  px(ctx, 1, 1, '#e04b4b');
+  px(ctx, 1, 3, '#d8d8e0');
+  px(ctx, 2, 3, '#d8d8e0');
+  px(ctx, 1, 5, '#d8d8e0');
+  px(ctx, 2, 5, '#d8d8e0');
+  px(ctx, 1, 7, '#d8d8e0');
+  px(ctx, 2, 7, '#d8d8e0');
+  outlineOuter(c, OUTLINE, 1);
+  return c;
+}
+
+/** 0 furious · 1 angry · 2 huffy · 3 okay (pixel emoji faces for the anger meter) */
+function face(stage: number): HTMLCanvasElement {
+  const [c, ctx] = makeCanvas(9, 9);
+  const fill = ['#e8322a', '#f07a2a', '#f4c430', '#ffd84a'][stage];
+  ellipse(ctx, 0, 0, 9, 9, fill);
+  const ink = '#3a1010';
+  if (stage <= 1) {
+    // slanted brows, frown
+    px(ctx, 2, 2, ink);
+    px(ctx, 3, 3, ink);
+    px(ctx, 6, 2, ink);
+    px(ctx, 5, 3, ink);
+    px(ctx, 3, 4, ink);
+    px(ctx, 5, 4, ink);
+    rect(ctx, 3, 6, 3, 1, ink);
+    if (stage === 0) {
+      px(ctx, 2, 7, ink);
+      px(ctx, 6, 7, ink);
+    }
+  } else if (stage === 2) {
+    // huff: flat eyes, flat mouth, steam puff
+    rect(ctx, 2, 3, 2, 1, ink);
+    rect(ctx, 5, 3, 2, 1, ink);
+    rect(ctx, 3, 6, 3, 1, ink);
+    px(ctx, 7, 6, '#ffffff');
+  } else {
+    // smile
+    px(ctx, 3, 3, ink);
+    px(ctx, 5, 3, ink);
+    px(ctx, 2, 5, ink);
+    px(ctx, 6, 5, ink);
+    rect(ctx, 3, 6, 3, 1, ink);
+  }
+  outlineOuter(c, OUTLINE, 0.9);
+  return c;
+}
+
+function dishes(n: number): HTMLCanvasElement {
+  const [c, ctx] = makeCanvas(14, 4 + n * 2);
+  for (let i = 0; i < n; i++) {
+    const y = 2 + (n - 1 - i) * 2;
+    const dx = i % 2 ? 1 : 0;
+    rect(ctx, 1 + dx, y, 11, 2, '#f4f4f8');
+    rect(ctx, 2 + dx, y, 9, 1, '#ffffff');
+    px(ctx, 3 + ((i * 3) % 7) + dx, y + 1, '#9a7a3a'); // grime
+    px(ctx, 8 - ((i * 2) % 4) + dx, y, '#b36b2a');
+  }
+  outlineOuter(c, OUTLINE, 0.9);
+  return c;
+}
+
+function dustPile(): HTMLCanvasElement {
+  const [c, ctx] = makeCanvas(14, 7);
+  ellipse(ctx, 0, 2, 14, 5, '#9a9088');
+  ellipse(ctx, 3, 0, 8, 5, '#b4aaa0');
+  px(ctx, 5, 2, '#6e6660');
+  px(ctx, 9, 4, '#6e6660');
+  px(ctx, 1, 6, '#c8bfb5');
+  px(ctx, 13, 5, '#c8bfb5');
+  return c;
+}
+
+function clothesPile(): HTMLCanvasElement {
+  const [c, ctx] = makeCanvas(14, 8);
+  ellipse(ctx, 0, 2, 14, 6, '#5a8de0');
+  ellipse(ctx, 2, 0, 7, 5, '#e86a9a');
+  ellipse(ctx, 7, 1, 6, 5, '#f4f4f8');
+  px(ctx, 4, 2, '#ffffff');
+  outlineOuter(c, OUTLINE, 0.9);
+  return c;
+}
+
+function trashBag(): HTMLCanvasElement {
+  const [c, ctx] = makeCanvas(11, 12);
+  ellipse(ctx, 0, 3, 11, 9, '#2c2c34');
+  rect(ctx, 4, 0, 3, 4, '#2c2c34');
+  px(ctx, 3, 1, '#e0c040');
+  px(ctx, 7, 1, '#e0c040');
+  px(ctx, 3, 6, '#55556a');
+  px(ctx, 4, 5, '#55556a');
+  outlineOuter(c, OUTLINE, 1);
+  return c;
+}
+
+/** Folded arms across the chest (drawn over a 16x24 front frame). */
+function arms(skin: string, sleeve: string): HTMLCanvasElement {
+  const [c, ctx] = makeCanvas(12, 4);
+  rect(ctx, 1, 0, 10, 2, sleeve);
+  rect(ctx, 0, 1, 2, 2, sleeve);
+  rect(ctx, 10, 1, 2, 2, sleeve);
+  rect(ctx, 2, 2, 3, 1, skin);
+  rect(ctx, 7, 1, 3, 1, skin);
+  rect(ctx, 1, 3, 10, 1, 'rgba(0,0,0,0.25)');
+  return c;
+}
+
+/** Register (once) the folded-arms overlay for a skin/shirt pair. */
+export function armsTexture(scene: Phaser.Scene, appearance: Appearance | undefined): string {
+  const skin = appearance?.skin || '#e8b48a';
+  const shirt = appearance?.shirt || '#c0504d';
+  const key = `am:arms:${skin}:${shirt}`;
+  if (!scene.textures.exists(key)) scene.textures.addCanvas(key, arms(skin, ramp(shirt)[1] ?? shirt));
+  return key;
+}
+
+/** The floating chore checklist (tiny pixel panel). */
+export function checklistTexture(scene: Phaser.Scene, rows: { text: string; done: boolean }[]): string {
+  const key = `am:list:${rows.map((r) => `${r.done ? 1 : 0}${r.text}`).join('|')}`;
+  if (scene.textures.exists(key)) return key;
+  const lines = ['CHORES', ...rows.map((r) => clean(r.text).toUpperCase())];
+  const w = Math.max(...lines.map((l) => measurePixelText(l, 1))) + 14;
+  const h = lines.length * 7 + 5;
+  const [c, ctx] = makeCanvas(w, h);
+  rect(ctx, 0, 0, w, h, '#fff7e0');
+  rect(ctx, 0, 0, w, 8, '#e04b4b');
+  drawPixelText(ctx, lines[0], 4, 2, '#ffffff', 1);
+  rows.forEach((r, i) => {
+    const y = 10 + i * 7;
+    rect(ctx, 3, y, 5, 5, r.done ? '#4caf50' : '#ffffff');
+    if (r.done) {
+      px(ctx, 4, y + 2, '#ffffff');
+      px(ctx, 5, y + 3, '#ffffff');
+      px(ctx, 6, y + 1, '#ffffff');
+    }
+    drawPixelText(ctx, lines[i + 1], 10, y, r.done ? '#8a8fa8' : '#2a2238', 1);
+    if (r.done) rect(ctx, 10, y + 2, measurePixelText(lines[i + 1], 1), 1, '#8a8fa8');
+  });
+  outlineOuter(c, OUTLINE, 1);
+  scene.textures.addCanvas(key, c);
+  return key;
+}
+
 export function ensureAngryTextures(scene: Phaser.Scene) {
+  add(scene, 'am:phone', phoneIcon());
+  add(scene, 'am:remote', remoteIcon());
+  for (let i = 0; i < 4; i++) add(scene, `am:face${i}`, face(i));
+  for (let n = 1; n <= 5; n++) add(scene, `am:dishes${n}`, dishes(n));
+  add(scene, 'am:dust', dustPile());
+  add(scene, 'am:clothes', clothesPile());
+  add(scene, 'am:trash', trashBag());
+  add(scene, 'am:confiscated', bigWord('CONFISCATED!', '#ffffff', 1, '#e04b4b'));
+  add(scene, 'am:spotless', bigWord('SPOTLESS!', '#ffe14d', 1, '#4caf50'));
   add(scene, 'am:steam', steam());
   add(scene, 'am:aura0', aura(0));
   add(scene, 'am:aura1', aura(1));

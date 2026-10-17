@@ -6,12 +6,13 @@ import { COMIC_WORDS, PILLOW_WORDS, ensureHomeTextures, lyingTexture } from '../
 import { FIGHT_MS, isGroggy, isWatchingTv, stopTv, tension, timeoutLeft, watchTv } from '../../core/homeLife';
 import { store } from '../../core/store';
 import { ANGRY, angryPhase, angryTick, bannedAttempt, callInfo, chaseSpeed, counter, demoAngry, detectionStep, isFound, pollTriggers, searchOver, setAngryStage, startCall, type AngryStage, type AngryTrigger, type ChaseHooks } from '../../core/angryMum';
+import { angerLevel, angerStage, choreDutyActive, choreInteract, choreSlack, choreTick, demoChores, dishesLeft, dustLeft, dutyHas, dutyMember, dutyView, foldLeft, trashState } from '../../core/angryMum';
 import { phoneLock } from '../../core/reels';
 import { sfx } from '../../core/sfx';
 import { flash, letterbox, redAlert, shake, slowMo, speedLines, sting } from '../cinematic';
-import { angrySheet, ensureAngryTextures, soulTexture, textTexture } from '../angryMumFx';
+import { angrySheet, armsTexture, checklistTexture, ensureAngryTextures, soulTexture, textTexture } from '../angryMumFx';
 import type { InteractSpec } from './WorldScene';
-import { ROOM_OBJECTS, SCHOOL_SPOTS } from '../../domain/homeLayout';
+import { DEST_LABELS, ROOM_OBJECTS, SCHOOL_SPOTS, type RoomObject } from '../../domain/homeLayout';
 import { itemName } from '../../domain/items';
 import { scheduleFor, type HomeSpot } from '../../domain/world';
 import type { FamilyMember, GameState, Role } from '../../domain/types';
@@ -124,6 +125,23 @@ const SOFA_SEAT = { x: 11 * T + 14, y: 214 };
 const BED_SIDE = { x: c(2) + 6, y: b(3) - 2 };
 /** furniture that wobbles when Angry Mum barrels past */
 const KNOCKABLE = new Set(['plant', 'lamp', 'dining-table', 'table-set', 'coffee-table', 'drying-rack', 'drying-rack-full', 'toybox', 'toybox-full', 'bin', 'bin-full', 'laundry', 'laundry-full', 'sofa', 'shoe-rack', 'shoe-rack-empty', 'school-bag']);
+/** CHORE DUTY: dust piles in the living room, the kitchen trash bag, the laundry pile, the doorway */
+const DUST_SPOTS = [
+  { x: c(4), y: b(12) },
+  { x: c(17), y: b(11) },
+  { x: c(21), y: b(13) },
+];
+const TRASH_SPOT = { x: c(24), y: b(4) };
+const CLOTHES_SPOT = { x: c(2) + 2, y: b(7) };
+const DOORWAY = { x: 12 * T, y: b(14) - 1 };
+const DEST_SPOT: Record<RoomObject['dest'], { x: number; y: number; r?: number }> = {
+  laundry: { x: c(1), y: b(7) - 4 },
+  bookshelf: { x: c(6), y: b(2) + 2 },
+  bin: { x: c(2), y: b(8) - 4 },
+  toybox: { x: c(8), y: b(8) - 4 },
+  sink: { x: c(20), y: b(2) + 2, r: 14 },
+};
+const METER_TINT = [0xe8322a, 0xf07a2a, 0xf4c430, 0x4caf50];
 const ROLE_SLOT: Partial<Record<Role, number>> ={ mother: 0, father: 0, guardian: 1, 'older-sibling': 1, 'younger-sibling': 2, grandparent: 0 };
 
 export class HomeScene extends WorldScene {
@@ -189,6 +207,7 @@ export class HomeScene extends WorldScene {
 
   populate() {
     const s = store.state;
+    ensureAngryTextures(this); // chore-duty props use these textures
     // ---- wall decorations ----
     this.prop({ key: 'window', x: c(2), y: b(1), wall: true });
     this.prop({ key: 'timetable', x: c(5), y: b(1), wall: true });
@@ -359,6 +378,9 @@ export class HomeScene extends WorldScene {
     // ---- exit ----
     this.door({ x: 12 * T, y: 15 * T + 10, w: 30, h: 10, to: 'town', spawn: 'home-door' });
 
+    // ---- CHORE DUTY (after Angry Mum Mode): dirty dishes, dust, laundry pile, trash bag ----
+    this.populateDuty();
+
     // ---- family (daily routines) ----
     this.fam = new Map();
     this.famTimer = 0;
@@ -388,11 +410,15 @@ export class HomeScene extends WorldScene {
       demo: (trigger?: AngryTrigger) => demoAngry(store, trigger),
       call: () => startCall(store, true),
       phase: () => angryPhase(store),
+      // __angry.chores() starts CHORE DUTY directly; __angry.anger() reads the meter
+      chores: () => demoChores(store),
+      anger: () => angerLevel(store),
     };
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.angryShutdown());
     this.unsub.push(
       store.bus.on('game', (ev) => {
         if (ev.type === 'interact' && ev.target.startsWith('hide:')) this.amHide(ev.target.slice(5));
+        if (ev.type === 'interact' && ev.target.startsWith('duty:')) choreInteract(store, ev.target);
       }),
     );
     this.controlled = new Set();
@@ -1028,6 +1054,7 @@ export class HomeScene extends WorldScene {
     this.amZoom = 0;
     this.amPhoneSeen = false;
     this.amFollow = [];
+    this.duty = undefined;
   }
 
   private angryShutdown() {
@@ -1055,12 +1082,15 @@ export class HomeScene extends WorldScene {
     lecture: (id, on) => (on ? this.amLectureOn(id) : this.amLectureOff()),
     calm: (id) => this.amCalm(id),
     approach: (id, done) => this.amApproach(id, done),
-    bubble: (id, text, loud) => this.amShowBubble(id, text, loud ?? false, text ? 60000 : 0),
+    bubble: (id, text, loud) => this.amShowBubble(id, text, loud ?? false, text ? (choreDutyActive(store) ? 2600 : 60000) : 0),
     distanceTo: (id) => {
       const e = this.fam.get(id);
       if (!e || !e.actor.sprite.active || !this.player?.active) return null;
       return Phaser.Math.Distance.Between(e.actor.sprite.x, e.actor.sprite.y, this.player.x, this.player.y);
     },
+    confiscate: (id, done) => this.dutyConfiscate(id, done),
+    duty: (id, on) => (on ? this.dutyOn(id) : this.dutyOff()),
+    dutyFx: (id, kind) => this.dutyFx(id, kind),
   };
 
   private amTrack<T extends Phaser.GameObjects.GameObject>(o: T): T {
@@ -1617,7 +1647,7 @@ export class HomeScene extends WorldScene {
       if (!f || now > this.amBubble.until) {
         this.amBubble.img.destroy();
         this.amBubble = undefined;
-      } else this.amBubble.img.setPosition(f.actor.sprite.x - 4, f.actor.sprite.y - 25 * (f === this.amE ? this.amScale : 1) - 2);
+      } else this.amBubble.img.setPosition(f.actor.sprite.x - 4, f.actor.sprite.y - 25 * (f === this.amE ? this.amScale : 1) - 2 - (this.duty?.e === f ? 9 : 0));
     }
     // parent's call: a shrinking timer bar over the player
     const call = callInfo(store);
@@ -1633,14 +1663,281 @@ export class HomeScene extends WorldScene {
       this.amCallBar = undefined;
     }
     this.amChaseFrame(delta);
+    this.dutyFrame(delta);
     // trying to use a confiscated phone
     const m = store.ui.modal;
     const phoneOpen = m?.type === 'phone' || m?.type === 'reels';
-    if (phoneOpen && !this.amPhoneSeen && phoneLock(store.state).locked) {
+    if (phoneOpen && !this.amPhoneSeen && choreDutyActive(store)) {
+      // chore duty: the phone is in her pocket — anger goes up
+      this.amPhoneSeen = true;
+      store.openModal(null);
+      choreSlack(store, 'phone');
+    } else if (phoneOpen && !this.amPhoneSeen && phoneLock(store.state).locked) {
       this.amPhoneSeen = true;
       if (counter(store, 'phone') >= 1) store.openModal(null); // second try: she's had enough
       bannedAttempt(store, 'phone');
     } else if (!phoneOpen) this.amPhoneSeen = false;
+  }
+
+  // =====================================================================================
+  // CHORE DUTY — after the lecture (logic in core/angryMum.ts). She follows you around with
+  // her arms crossed, an anger meter over her head and the chore list next to her.
+  // =====================================================================================
+
+  private duty?: {
+    e: FamEntry;
+    meter: Phaser.GameObjects.Image[];
+    face: Phaser.GameObjects.Image;
+    arms: Phaser.GameObjects.Image;
+    list?: Phaser.GameObjects.Image;
+    listKey: string;
+    bag?: Phaser.GameObjects.Image;
+    path: { x: number; y: number }[];
+    pathAt: number;
+    pathGoal?: { x: number; y: number };
+    blockUntil: number;
+    stage: number;
+    walking: boolean;
+  };
+
+  /** Props + interactables for chore duty (all state-driven, so a scene reload restores them). */
+  private populateDuty() {
+    const on = () => choreDutyActive(store);
+    const heldRoom = (st: GameState) => ROOM_OBJECTS.some((o) => st.world[`room.${o.id}`] === 'held');
+    // a tower of dirty plates by the sink
+    this.prop({ key: () => `am:dishes${Phaser.Math.Clamp(dishesLeft(store), 1, 5)}`, x: c(21), y: b(2) - 11, depth: b(2) + 1, visible: () => dutyHas(store, 'dishes') && dishesLeft(store) > 0 });
+    DUST_SPOTS.forEach((p, i) => this.prop({ key: 'am:dust', x: p.x, y: p.y, depth: -400, visible: () => dutyHas(store, 'sweep') && dustLeft(store, i) }));
+    this.prop({ key: 'am:clothes', x: CLOTHES_SPOT.x, y: CLOTHES_SPOT.y, depth: CLOTHES_SPOT.y - 1, visible: () => dutyHas(store, 'laundry') && foldLeft(store) > 0 });
+    this.prop({ key: 'am:trash', x: TRASH_SPOT.x, y: TRASH_SPOT.y, visible: () => dutyHas(store, 'trash') && trashState(store) === 'bin' });
+    // duty interactables go FIRST, so on a tie they win over the normal ones at the same spot
+    const specs: InteractSpec[] = [
+      ...ROOM_OBJECTS.map((o): InteractSpec => ({ id: `duty:room:${o.id}`, x: c(o.col), y: b(o.row) - 8, r: 12, label: `Pick up ${itemName(o.item).toLowerCase()}`, visible: (st) => dutyHas(store, 'clean-room') && roomOf(st, o.id) === 'floor' })),
+      ...(Object.keys(DEST_SPOT) as RoomObject['dest'][]).map((d): InteractSpec => ({ id: `duty:put:${d}`, ...DEST_SPOT[d], r: DEST_SPOT[d].r ?? 12, label: `Put away in the ${DEST_LABELS[d]}`, visible: (st) => dutyHas(store, 'clean-room') && heldRoom(st) })),
+      { id: 'duty:dish', x: c(20), y: b(2) + 2, r: 14, label: () => `🧽 Scrub a plate (${dishesLeft(store)} left)`, visible: (st) => dutyHas(store, 'dishes') && !heldRoom(st) },
+      ...DUST_SPOTS.map((p, i): InteractSpec => ({ id: `duty:dust:${i}`, x: p.x, y: p.y - 4, r: 12, label: '🧹 Sweep up the dust', visible: () => dutyHas(store, 'sweep') && dustLeft(store, i) })),
+      { id: 'duty:fold', x: CLOTHES_SPOT.x, y: CLOTHES_SPOT.y - 5, r: 11, label: () => `👕 Fold the laundry (${foldLeft(store)} left)`, visible: (st) => dutyHas(store, 'laundry') && !heldRoom(st) },
+      { id: 'duty:trash', x: TRASH_SPOT.x, y: TRASH_SPOT.y - 4, r: 12, label: '🗑️ Pick up the trash bag', visible: () => dutyHas(store, 'trash') && trashState(store) === 'bin' },
+      { id: 'duty:trash-out', x: DOORWAY.x, y: DOORWAY.y - 1, r: 14, label: '🗑️ Put the trash bag outside', visible: () => dutyHas(store, 'trash') && trashState(store) === 'held' },
+      { id: 'duty:no:fridge', x: c(16), y: b(2) + 2, label: 'Fridge (no snacks on chore duty)', visible: on },
+      { id: 'duty:no:tv', x: 11 * T, y: b(10) + 8, r: 12, label: 'TV (the remote is confiscated)', visible: on },
+      { id: 'duty:no:sofa', x: 11 * T + 12, y: b(13) - 6, label: 'Sofa', visible: on },
+      { id: 'duty:no:bed', x: c(1) + 6, y: b(3) - 10, r: 18, label: (st) => (dutyHas(store, 'clean-room') && st.world['room.bed'] !== 'made' ? 'Make the bed' : 'Your bed (chores first!)'), visible: on },
+    ];
+    this.interactables.unshift(...specs);
+  }
+
+  /** Phone + TV remote fly from the player into her hands. */
+  private dutyConfiscate(id: string, done: () => void) {
+    const e = this.fam.get(id);
+    if (!e || !this.player?.active) return done();
+    if (isWatchingTv(store)) stopTv(store);
+    if (this.lying) this.getUp();
+    const spr = e.actor.sprite;
+    const pl = this.player;
+    this.returning = this.returning.filter((r) => r.e !== e); // she stays right here
+    this.lock('confiscate', true);
+    pl.setVelocity(0, 0);
+    const fly = () => {
+      this.face(spr, pl.x, pl.y);
+      this.facing = this.dirOf(spr.x - pl.x, spr.y - pl.y);
+      this.rise('fx:exclaim', pl.x, pl.y - 28);
+      (['am:phone', 'am:remote'] as const).forEach((k, i) =>
+        this.time.delayedCall(i * 380, () => {
+          const x0 = pl.x + (i ? 5 : -5);
+          const y0 = pl.y - 14;
+          const tx = spr.x + (i ? 3 : -3);
+          const ty = spr.y - 12;
+          const img = this.add.image(x0, y0, k).setDepth(16000);
+          if (store.ui.sound) sfx.play('pickup');
+          this.tweens.addCounter({
+            from: 0,
+            to: 1,
+            duration: 560,
+            ease: 'Sine.easeInOut',
+            onUpdate: (tw) => {
+              const t = tw.getValue() ?? 0;
+              img.setPosition(x0 + (tx - x0) * t, y0 + (ty - y0) * t - Math.sin(t * Math.PI) * 20).setAngle(t * 360);
+            },
+            onComplete: () => this.tweens.add({ targets: img, scale: 0, delay: 350, duration: 200, onComplete: () => img.destroy() }),
+          });
+        }),
+      );
+      this.time.delayedCall(1000, () => {
+        this.popWord('am:confiscated', spr.x, spr.y - 34, 1300);
+        shake(0.006, 200);
+      });
+      this.time.delayedCall(1700, () => {
+        this.lock('confiscate', false);
+        done();
+      });
+    };
+    if (Phaser.Math.Distance.Between(spr.x, spr.y, pl.x, pl.y) > 30) this.walkActor(e, this.besidePlayer(spr), fly, 95);
+    else {
+      this.take(e);
+      fly();
+    }
+  }
+
+  private dutyOn(id: string) {
+    const e = this.fam.get(id);
+    if (!e || !e.actor.sprite.active) return;
+    if (this.duty?.e === e) return;
+    this.dutyOff();
+    this.take(e);
+    const m = store.member(id);
+    const meter = [this.add.image(0, 0, 'am:px').setDepth(16400).setTint(0x222233), this.add.image(0, 0, 'am:px').setOrigin(0, 0.5).setDepth(16401)];
+    const face = this.add.image(0, 0, 'am:face0').setDepth(16402);
+    const arms = this.add.image(0, 0, armsTexture(this, m?.appearance)).setOrigin(0.5, 0.5);
+    this.duty = { e, meter, face, arms, listKey: '', path: [], pathAt: 0, blockUntil: 0, stage: angerStage(angerLevel(store)), walking: false };
+  }
+
+  private dutyOff() {
+    const d = this.duty;
+    if (!d) return;
+    this.duty = undefined;
+    [...d.meter, d.face, d.arms, d.list, d.bag].forEach((o) => o?.active && o.destroy());
+    const e = d.e;
+    if (this.fam.get(e.member.id) === e && e.actor.sprite.active && this.amE !== e) {
+      const spot = (e.spot === 'away' ? 'living' : e.spot) as Exclude<HomeSpot, 'away'>;
+      this.returning.push({ e, home: { ...this.placeFor(e.member, spot, 0) }, free: 0 });
+    }
+  }
+
+  private dutyFx(id: string, kind: 'huff' | 'soften' | 'block' | 'nod') {
+    const e = this.fam.get(id);
+    if (!e) return;
+    const spr = e.actor.sprite;
+    if (kind === 'huff') {
+      this.amSteamPuff(spr, true);
+      this.time.delayedCall(160, () => spr.active && this.amSteamPuff(spr));
+      if (this.duty) this.tweens.add({ targets: this.duty.face, scale: 1.6, duration: 120, yoyo: true });
+    } else if (kind === 'soften') {
+      this.rise('fx:sparkle', spr.x, spr.y - 30);
+    } else if (kind === 'block') {
+      if (this.duty) {
+        this.duty.blockUntil = this.time.now + 2600;
+        this.duty.pathAt = 0;
+      }
+      this.rise('fx:exclaim', spr.x, spr.y - 30);
+    } else this.popWord('am:nod', spr.x, spr.y - 30, 900);
+  }
+
+  /** route() for the follower; the bedroom / kitchen doorways count as their room (no back-and-forth there). */
+  private dutyRoute(spr: { x: number; y: number }, tgt: { x: number; y: number }) {
+    const inDoor = spr.y > 140 && spr.y < LANE - 4 && (spr.x < 120 || spr.x > 320);
+    if (!inDoor) return this.route({ x: spr.x, y: spr.y }, tgt);
+    const room: Room = spr.x < 120 ? 'bedroom' : 'kitchen';
+    const out = { x: spr.x, y: this.roomAt(tgt.x, tgt.y) === room ? 138 : LANE };
+    return [out, ...this.route(out, tgt)];
+  }
+
+  /** Per-frame: follower AI, folded arms + foot tap, anger meter, checklist, doorway block. */
+  private dutyFrame(delta: number) {
+    const active = choreDutyActive(store);
+    if (!active) {
+      if (this.duty) this.dutyOff();
+      return;
+    }
+    // (re)attach after a scene reload or when she comes home
+    if (!this.duty && !store.blocking && !this.amE && !this.amChase) {
+      const dm = dutyMember(store);
+      if (dm) this.dutyOn(dm.id);
+    }
+    const pl = this.player;
+    const moving = !!pl?.active && pl.body.velocity.lengthSq() > 1;
+    choreTick(store, delta, moving);
+    const d = this.duty;
+    if (!d || !pl?.active) return;
+    const spr = d.e.actor.sprite;
+    if (!spr.active || this.fam.get(d.e.member.id) !== d.e) return this.dutyOff();
+    const now = this.time.now;
+    if (this.returning.some((r) => r.e === d.e)) this.returning = this.returning.filter((r) => r.e !== d.e);
+    if (!this.controlled.has(d.e.member.id)) this.take(d.e);
+    // the front door is OFF LIMITS (she gets there first)
+    if (pl.y > DOORWAY.y && Math.abs(pl.x - DOORWAY.x) < 24 && !this.transitioning) {
+      pl.body.reset(pl.x, DOORWAY.y - 8);
+      d.blockUntil = now + 2600;
+      d.pathAt = 0;
+      choreSlack(store, 'leave');
+    }
+    // follow ~1.2 tiles behind / beside the player (or stand in the doorway)
+    if (!store.blocking && !this.locks.has('confiscate')) {
+      let tgt: { x: number; y: number };
+      if (now < d.blockUntil) tgt = { x: DOORWAY.x, y: DOORWAY.y };
+      else {
+        const f = this.facing;
+        const fx = f === 'left' ? -1 : f === 'right' ? 1 : 0;
+        const fy = f === 'up' ? -1 : f === 'down' ? 1 : 0;
+        const R = ROOM_RECT[this.roomAt(pl.x, pl.y)];
+        tgt = { x: Phaser.Math.Clamp(pl.x - fx * 19 + (fy ? 10 : 0), R.x0, R.x1), y: Phaser.Math.Clamp(pl.y - fy * 19 + (fx ? 3 : 0), R.y0, R.y1) };
+      }
+      const dist = Phaser.Math.Distance.Between(spr.x, spr.y, tgt.x, tgt.y);
+      d.walking = dist > 6;
+      if (dist > 6 && !this.isBusyWalking(d.e)) {
+        const goalMoved = !d.pathGoal || Phaser.Math.Distance.Between(d.pathGoal.x, d.pathGoal.y, tgt.x, tgt.y) > 26;
+        if (!d.path.length || (goalMoved && now > d.pathAt)) {
+          d.pathAt = now + 450;
+          d.pathGoal = { ...tgt };
+          d.path = this.dutyRoute(spr, tgt);
+        }
+        const p = d.path[0] ?? tgt;
+        const dx = p.x - spr.x;
+        const dy = p.y - spr.y;
+        const dd = Math.hypot(dx, dy);
+        const sp = ((now < d.blockUntil ? 120 : dist > 50 ? 92 : 64) * delta) / 1000;
+        if (dd <= sp) {
+          spr.setPosition(p.x, p.y);
+          d.path.shift();
+        } else spr.setPosition(spr.x + (dx / dd) * sp, spr.y + (dy / dd) * sp);
+        this.puppets.set(spr, { dir: this.dirOf(dx, dy), walk: true });
+      } else if (!this.isBusyWalking(d.e)) {
+        // arms crossed, glaring, tapping her foot
+        this.puppets.set(spr, { dir: this.dirOf(pl.x - spr.x, pl.y - spr.y), walk: Math.floor(now / 170) % 6 === 0 });
+      }
+    }
+    const dir = this.puppets.get(spr)?.dir ?? 'down';
+    const walking = d.walking || this.isBusyWalking(d.e);
+    d.arms.setVisible(dir !== 'up' && !walking).setPosition(spr.x, spr.y - 10).setDepth(spr.depth + 0.2);
+    if (dir === 'left' || dir === 'right') d.arms.setScale(0.6, 1);
+    else d.arms.setScale(1, 1);
+    // anger meter over her head
+    const anger = angerLevel(store);
+    const st = angerStage(anger);
+    const top = spr.y - 30;
+    const [bg, fg] = d.meter;
+    bg.setPosition(spr.x + 3, top).setDisplaySize(22, 4);
+    fg.setPosition(spr.x - 8, top).setDisplaySize(Math.max(0.01, (anger / 100) * 22), 2).setTint(METER_TINT[st]);
+    d.face.setPosition(spr.x - 13, top).setTexture(`am:face${st}`);
+    if (st !== d.stage) {
+      d.stage = st;
+      this.tweens.add({ targets: d.face, scale: { from: 1.8, to: 1 }, duration: 260, ease: 'Back.easeOut' });
+    }
+    // floating checklist beside her
+    const view = dutyView(store);
+    if (view) {
+      const rows = view.chores.map((c) => ({ text: `${c.label} ${c.done ? '' : c.progress}`.trim(), done: c.done }));
+      const key = checklistTexture(this, rows);
+      if (key !== d.listKey || !d.list?.active) {
+        d.listKey = key;
+        d.list?.destroy();
+        d.list = this.add.image(0, 0, key).setOrigin(0, 1).setDepth(16300).setAlpha(0.94);
+      }
+      // on the side away from the player (so it never hides them), kept inside the view
+      const v = this.cameras.main.worldView;
+      let right = pl.x <= spr.x;
+      if (right && spr.x + 14 + d.list.width > v.right) right = false;
+      if (!right && spr.x - 14 - d.list.width < v.x) right = true;
+      const y = Phaser.Math.Clamp(spr.y - 26, v.y + 2, v.bottom - d.list.height - 2);
+      d.list.setOrigin(right ? 0 : 1, 0).setPosition(right ? spr.x + 12 : spr.x - 12, y);
+    }
+    // carrying the trash bag
+    if (trashState(store) === 'held' && dutyHas(store, 'trash')) {
+      if (!d.bag?.active) d.bag = this.add.image(0, 0, 'am:trash').setOrigin(0.5, 1);
+      d.bag.setPosition(pl.x, pl.y - 21).setDepth(pl.depth + 1);
+    } else if (d.bag) {
+      d.bag.destroy();
+      d.bag = undefined;
+    }
   }
 
   private placeFor(m: FamilyMember, spot: Exclude<HomeSpot, 'away'>, index: number): Place {

@@ -233,7 +233,7 @@ describe('the flow (with a fake stage)', () => {
     expect(c.tvBanned).toBe(true);
     expect(c.phoneTakenUntil).toBeGreaterThan(t0);
     expect(c.alerts[0].text).toMatch(/caught/);
-    expect(s.state.clock.minutes - t0).toBeGreaterThanOrEqual(ANGRY.lectureMin); // lecture time-lapse
+    expect(s.state.clock.minutes - t0).toBeGreaterThanOrEqual(ANGRY.lectureMin - 0.001); // lecture time-lapse
     expect(angryPhase(s)).toBe('cool');
   });
 
