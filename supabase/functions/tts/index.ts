@@ -243,6 +243,9 @@ async function synthesize(req: TtsRequest, models: string[]): Promise<{ result: 
 
 function mapElevenError(r: ElevenResult): Response {
   const why = r.detail ? `: ${r.detail}` : '';
+  if (r.status === 401 && /quota|credit|limit/i.test(`${r.detailCode ?? ''} ${r.detail ?? ''}`)) {
+    return fail(402, 'ElevenLabs monthly credits are used up — saved lines still play; new lines need more credits', 'quota');
+  }
   if (r.status === 401) return fail(502, 'ElevenLabs rejected the API key (check the ELEVENLABS_API_KEY secret)', 'bad_key');
   if (isVoiceProblem(r)) return fail(422, `This voice is not available on the ElevenLabs account${why}`, 'voice_unavailable');
   if (r.status === 402 || r.status === 403) return fail(402, `ElevenLabs refused the request (plan or quota)${why}`, 'quota');

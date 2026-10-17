@@ -42,7 +42,15 @@ const REQUEST_TIMEOUT_MS = 20_000;
 /** longest wait for the first audio of a line before falling back to built-in voices */
 const START_TIMEOUT_MS = 9_000;
 const MAX_SOFT_FAILURES = 3;
-const HARD_CODES = new Set(['not_configured', 'bad_key', 'daily_cap', 'quota']);
+const HARD_CODES = new Set(['not_configured', 'bad_key']);
+/** credits/cap exhausted: keep serving saved lines, fall back only for brand-new ones */
+const OUT_OF_CREDIT_CODES = new Set(['quota', 'daily_cap']);
+let outOfCredits: string | null = null;
+
+/** Set when ElevenLabs credits (or the daily cap) are used up — saved lines still play. */
+export function neuralOutOfCredits(): string | null {
+  return outOfCredits;
+}
 
 let hardFail: string | null = null;
 let lastError: string | null = null;
@@ -108,6 +116,7 @@ export function neuralAvailable(): boolean {
 export function neuralStatus(): { state: NeuralState; message: string } {
   if (!neuralConfigured()) return { state: 'unconfigured', message: 'Not configured — this build has no Supabase project, so built-in voices are used.' };
   if (hardFail) return { state: 'error', message: hardFail };
+  if (outOfCredits) return { state: 'ok', message: 'ElevenLabs monthly credits are used up. Lines already heard keep their realistic voices; new lines use built-in voices until the credits renew.' };
   if (lastOk) return { state: 'ok', message: lastError ? `Working (last issue: ${lastError})` : 'Working.' };
   return { state: 'ready', message: lastError ?? 'Available — the first line may take a moment.' };
 }
@@ -115,6 +124,7 @@ export function neuralStatus(): { state: NeuralState; message: string } {
 /** Clear a session failure (Settings → "Retry"). */
 export function resetNeuralErrors() {
   hardFail = null;
+  outOfCredits = null;
   lastError = null;
   softFailures = 0;
   badVoices.clear();
@@ -348,6 +358,15 @@ async function fetchAudio(line: NeuralLine): Promise<string | null> {
     }
     const code = typeof body.code === 'string' ? body.code : '';
     const msg = typeof body.error === 'string' ? body.error : typeof (body as any).message === 'string' ? (body as any).message : `HTTP ${r.status}`;
+    if (OUT_OF_CREDIT_CODES.has(code)) {
+      // not a broken service: saved lines keep their realistic voices, this new line uses a built-in voice
+      if (outOfCredits !== msg) {
+        outOfCredits = msg;
+        lastError = msg;
+        emit();
+      }
+      return null;
+    }
     if (HARD_CODES.has(code)) hardFailWith(msg);
     else if (r.status === 404 && !code) hardFailWith('The "tts" Edge Function is not deployed on this Supabase project.');
     else if ((r.status === 401 || r.status === 403) && !code) hardFailWith('The voice service rejected the app key (check VITE_SUPABASE_ANON_KEY / anonymous sign-ins).');
