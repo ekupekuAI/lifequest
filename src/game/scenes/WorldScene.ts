@@ -329,7 +329,7 @@ export abstract class WorldScene extends Phaser.Scene {
     if (this.transitioning) return;
     this.transitioning = true;
     sfx.play('door');
-    this.player.setVelocity(0, 0);
+    this.player?.body && this.player.setVelocity(0, 0);
     const go = () => this.scene.start(SCENE_FOR[to], { spawn });
     if (instant) return go();
     this.cameras.main.fadeOut(200, 0, 0, 0);

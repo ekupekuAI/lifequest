@@ -246,7 +246,7 @@ export function moodLabel(id: MoodId | null): string {
 if (typeof window !== 'undefined') {
   try {
     audioDirector.start();
-    (window as any).__lqAudio = audioDirector;
+    if (import.meta.env?.DEV) (window as any).__lqAudio = audioDirector;
   } catch {
     /* never break the app over audio */
   }

@@ -1,0 +1,114 @@
+/* Plot-twist overlays (TwistOverlay.tsx) */
+
+/* ---- power cut: near-black screen with a light cone that follows the player ---- */
+.twist-dark {
+  position: absolute; inset: 0; z-index: 8; pointer-events: none;
+  background: radial-gradient(circle at var(--twist-lx, 50%) var(--twist-ly, 55%), rgba(255, 244, 200, 0.06) 0, rgba(4, 5, 14, 0.55) 34px, rgba(2, 3, 10, 0.95) 70px);
+  animation: twist-dark-in 260ms steps(3, end) both;
+}
+.twist-dark.torch {
+  background: radial-gradient(circle at var(--twist-lx, 50%) var(--twist-ly, 55%), rgba(255, 236, 160, 0.14) 0, rgba(255, 220, 140, 0.05) 70px, rgba(4, 5, 14, 0.6) 120px, rgba(2, 3, 10, 0.93) 170px);
+  animation: twist-flicker 2.4s steps(1, end) infinite;
+}
+.twist-dark-note {
+  position: absolute; left: 50%; top: calc(44px + var(--safe-t, 0px)); transform: translateX(-50%); z-index: 11;
+  font-family: var(--display); font-size: 8px; color: var(--gold); text-shadow: 1px 1px 0 #000;
+  padding: 4px 8px; background: rgba(0, 0, 0, 0.6); border: 2px solid var(--ink); pointer-events: none;
+}
+@keyframes twist-dark-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes twist-flicker { 0%, 100% { opacity: 1; } 47% { opacity: 0.94; } 50% { opacity: 1; } 82% { opacity: 0.97; } }
+
+/* ---- "WHAAAT?!" title card ---- */
+.twist-card {
+  position: absolute; left: 50%; top: 30%; z-index: 66; pointer-events: none;
+  transform: translate(-50%, -50%);
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 14px 20px 12px; min-width: min(360px, calc(100vw - 32px)); max-width: calc(100vw - 32px);
+  background: var(--panel); border: 3px solid var(--ink); box-shadow: inset 0 0 0 2px var(--orange), 6px 6px 0 rgba(0, 0, 0, 0.5);
+  animation: twist-card 2.6s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+  text-align: center;
+}
+.twist-card.tone-warm { box-shadow: inset 0 0 0 2px var(--mint), 6px 6px 0 rgba(0, 0, 0, 0.5); }
+.twist-card.tone-fun { box-shadow: inset 0 0 0 2px #e85d75, 6px 6px 0 rgba(0, 0, 0, 0.5); }
+.twist-card-emoji { font-size: 44px; line-height: 1; animation: twist-wobble 0.5s ease-in-out 3; }
+.twist-card-title { font-family: var(--display); font-size: clamp(12px, 3.4vw, 20px); color: var(--gold); text-shadow: 2px 2px 0 #000; letter-spacing: 1px; }
+.twist-card-sub { font-size: 20px; color: var(--text); }
+.twist-card-tag { position: absolute; top: -10px; right: -8px; font-family: var(--display); font-size: 7px; padding: 3px 5px; background: var(--coral); color: #fff; border: 2px solid var(--ink); transform: rotate(6deg); }
+@keyframes twist-card {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(0.3) rotate(-8deg); }
+  14% { opacity: 1; transform: translate(-50%, -50%) scale(1.08) rotate(2deg); }
+  22% { transform: translate(-50%, -50%) scale(1) rotate(0); }
+  85% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -60%) scale(0.96); }
+}
+@keyframes twist-wobble { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-14deg); } 75% { transform: rotate(14deg); } }
+
+/* ---- newspaper headline reveal ---- */
+.twist-paper-backdrop { position: absolute; inset: 0; z-index: 64; display: grid; place-items: center; background: rgba(8, 9, 22, 0.55); padding: 16px; animation: twist-dark-in 200ms ease-out both; }
+.twist-paper {
+  width: min(400px, 100%); padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 8px; align-items: stretch;
+  background: #f3ead2; color: #1b1325; border: 3px solid #1b1325; box-shadow: 8px 8px 0 rgba(0, 0, 0, 0.45);
+  animation: twist-spin 900ms cubic-bezier(0.2, 1.2, 0.4, 1) both;
+}
+.tp-mast { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 3px double #1b1325; padding-bottom: 4px; font-size: 16px; }
+.tp-mast b { font-family: var(--display); font-size: 11px; letter-spacing: 1px; }
+.tp-title { margin: 0; font-family: var(--display); font-size: clamp(13px, 4vw, 18px); line-height: 1.35; text-align: center; color: #1b1325; }
+.tp-body { display: flex; gap: 10px; align-items: center; }
+.tp-photo { flex: none; width: 74px; height: 60px; display: grid; grid-template-columns: 1fr 1fr; place-items: center; font-size: 26px; background: #cfc4a6; border: 2px solid #1b1325; filter: grayscale(0.6) contrast(1.1); }
+.tp-body p { margin: 0; font-size: 19px; line-height: 1.1; }
+.tp-cols { margin: 0; font-size: 15px; line-height: 1.05; color: #4a4236; column-count: 2; column-gap: 12px; border-top: 1px solid #1b1325; padding-top: 6px; }
+.twist-paper .btn { align-self: center; }
+@keyframes twist-spin {
+  0% { opacity: 0; transform: scale(0.1) rotate(-720deg); }
+  70% { opacity: 1; transform: scale(1.06) rotate(4deg); }
+  100% { transform: scale(1) rotate(-1.5deg); }
+}
+
+/* ---- viral reel: views rocket + notification spam ---- */
+.twist-viral { position: absolute; inset: 0; z-index: 64; pointer-events: none; display: flex; justify-content: center; align-items: flex-start; padding-top: calc(70px + var(--safe-t, 0px)); }
+.tv-phone {
+  display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 12px 18px; min-width: 210px;
+  background: linear-gradient(160deg, #2a1f5c, #12142e); border: 3px solid var(--ink); box-shadow: inset 0 0 0 2px #e85d75, 6px 6px 0 rgba(0, 0, 0, 0.5);
+  animation: twist-card-pop 400ms cubic-bezier(0.2, 1.4, 0.4, 1) both;
+}
+.tv-label { font-family: var(--display); font-size: 7px; color: var(--muted); letter-spacing: 1px; }
+.tv-views { font-family: var(--display); font-size: 30px; color: #fff; text-shadow: 3px 3px 0 #e85d75; font-variant-numeric: tabular-nums; }
+.tv-views.peak { color: var(--gold); animation: twist-wobble 0.4s ease-in-out 2; }
+.tv-sub { font-size: 18px; color: var(--muted); }
+.tv-bar { width: 100%; height: 6px; background: rgba(255, 255, 255, 0.12); border: 1px solid var(--ink); }
+.tv-bar span { display: block; height: 100%; background: linear-gradient(90deg, var(--mint), var(--gold), #e85d75); }
+.tv-pings { position: absolute; inset: 0; overflow: hidden; }
+.tv-ping {
+  position: absolute; right: calc(10px + var(--i) * 3%); top: calc(150px + var(--i) * 48px);
+  padding: 4px 8px; font-size: 17px; color: #fff; background: rgba(18, 20, 46, 0.92); border: 2px solid var(--ink); box-shadow: inset 0 0 0 1px #e85d75;
+  animation: twist-ping 1.6s ease-out both;
+}
+.tv-ping:nth-child(even) { right: auto; left: calc(10px + var(--i) * 3%); }
+@keyframes twist-ping { 0% { opacity: 0; transform: translateY(20px) scale(0.6); } 15% { opacity: 1; transform: translateY(0) scale(1.05); } 80% { opacity: 1; } 100% { opacity: 0; transform: translateY(-30px); } }
+@keyframes twist-card-pop { from { opacity: 0; transform: scale(0.5); } to { opacity: 1; transform: scale(1); } }
+
+/* ---- comments under the reel ---- */
+.twist-comments {
+  position: absolute; right: calc(10px + var(--safe-r, 0px)); top: calc(110px + var(--safe-t, 0px)); z-index: 61; width: min(250px, calc(100vw - 20px));
+  display: flex; flex-direction: column; gap: 4px; padding: 8px; background: var(--panel); border: 3px solid var(--ink); box-shadow: inset 0 0 0 2px var(--frame);
+  pointer-events: none;
+}
+.tc-head { font-family: var(--display); font-size: 8px; color: var(--muted); }
+.tc-row { display: flex; flex-direction: column; padding: 3px 6px; background: rgba(0, 0, 0, 0.3); border-left: 3px solid var(--dim); animation: twist-card-pop 260ms ease-out both; }
+.tc-row.mean { border-left-color: var(--coral); }
+.tc-row.nice { border-left-color: var(--mint); }
+.tc-row.creepy { border-left-color: var(--gold); }
+.tc-user { font-size: 14px; color: var(--muted); }
+.tc-text { font-size: 17px; line-height: 1; color: var(--text); }
+
+/* ---- fame badge ---- */
+.twist-fame { position: absolute; left: calc(8px + var(--safe-l, 0px)); top: calc(92px + var(--safe-t, 0px)); z-index: 11; pointer-events: none; font-family: var(--display); font-size: 7px; color: var(--gold); padding: 4px 8px; background: rgba(0, 0, 0, 0.6); border: 2px solid var(--ink); white-space: nowrap; }
+
+@media (prefers-reduced-motion: reduce) {
+  .twist-card, .twist-paper, .tv-phone, .tv-ping, .tc-row, .twist-card-emoji, .twist-dark.torch { animation-duration: 1ms !important; animation-iteration-count: 1 !important; }
+  .twist-card { animation: none; opacity: 1; }
+}
+
+@media (max-width: 520px) {
+  .twist-comments { top: auto; bottom: calc(190px + var(--safe-b, 0px)); }
+}

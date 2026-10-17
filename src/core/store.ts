@@ -58,6 +58,7 @@ import { bedMenu, familyRemark, homeBusy, isSibling, morningAlarm, siblingTalk, 
 import { sfx } from './sfx';
 import type { GameRepository } from '../services/repository';
 import { createRepository } from '../services/repository';
+import { afterAccept as rewindAfterAccept, captureChallenge, captureMission, resetRewind, rewinding } from './rewind';
 
 export type Screen = 'start' | 'setup' | 'game' | 'parent' | 'family' | 'parent-live';
 
@@ -237,6 +238,7 @@ export class GameStore {
 
   get blocking(): boolean {
     if (this.ui.screen !== 'game') return true;
+    if (rewinding()) return true; // the VHS rewind effect is playing
     if (this.ui.dialogue) return true;
     if (this.ui.modal) {
       // reviewing the list while queueing keeps the queue moving
@@ -257,6 +259,7 @@ export class GameStore {
     this.state = freshState(profile, undefined, st);
     this.lastWholeMinute = Math.floor(this.state.clock.minutes);
     this.runSnapshot = null;
+    resetRewind(this);
     this.ui = { ...this.ui, screen: 'game', dialogue: null, modal: null, toasts: [], waiting: false };
     this.notify();
     this.save();
@@ -269,6 +272,7 @@ export class GameStore {
     setRegion(settings.region);
     this.state = { ...freshState(loaded.profile, loaded.seed, settings), ...loaded, settings, inQueue: false };
     this.runSnapshot = loaded.rewind ?? null;
+    resetRewind(this);
     if (this.state.location === 'grocery' || this.state.location === 'clinic') this.state.location = 'town';
     this.lastWholeMinute = Math.floor(this.state.clock.minutes);
     this.ui = { ...this.ui, screen: 'game', dialogue: null, modal: null, waiting: false };
@@ -591,6 +595,7 @@ export class GameStore {
   }
 
   presentChallenge(ch: ChallengeDef, after?: () => void) {
+    captureChallenge(this, ch, after); // Rewind Time checkpoint (before anything changes)
     const run = this.state.run;
     if (run && !run.challengesSeen.includes(ch.id)) run.challengesSeen.push(ch.id);
     this.pendingAfterChallenge = after ?? null;
@@ -649,6 +654,7 @@ export class GameStore {
   acceptMission(missionId: string, assignerId: string, assignmentId?: string) {
     const def = getMission(missionId);
     if (!def) return;
+    captureMission(this, missionId, assignerId, assignmentId, def.title); // Rewind Time checkpoint
     const { rewind: _old, ...rest } = this.state;
     this.runSnapshot = JSON.stringify(rest);
     this.state.rewind = this.runSnapshot;
@@ -672,6 +678,7 @@ export class GameStore {
       challengesSeen: [],
     };
     if (asg) asg.status = 'in-progress';
+    rewindAfterAccept(this);
     this.ui = { ...this.ui, modal: null };
     if (budget) {
       this.state.run.cashGiven = budget;
@@ -693,8 +700,19 @@ export class GameStore {
     return def.budget ? money(def.budget * this.diff.budgetMul) : null;
   }
 
+  /** Rewind Time: replace the whole state with a checkpoint (see core/rewind.ts). */
+  restoreState(next: GameState) {
+    this.state = next;
+    this.lastWholeMinute = Math.floor(next.clock.minutes);
+    this.pendingAfterChallenge = null;
+    this.dialogueDone = null;
+    this.ui = { ...this.ui, modal: null, dialogue: null, waiting: false, prompt: null, feedback: null };
+    this.notify();
+  }
+
   restartMission() {
     if (!this.runSnapshot) return;
+    resetRewind(this);
     const snap = JSON.parse(this.runSnapshot) as GameState;
     const pending = this.state.run ?? null;
     const missionId = pending?.missionId;
@@ -709,6 +727,7 @@ export class GameStore {
 
   retryFromResult(result: MissionResult) {
     if (!this.runSnapshot) return;
+    resetRewind(this);
     const snap = JSON.parse(this.runSnapshot) as GameState;
     // keep earned progress history but rewind the world
     snap.results = this.state.results;

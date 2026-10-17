@@ -1,9 +1,16 @@
 import Phaser from 'phaser';
+import { demoHooksEnabled } from '../../core/demo';
 import { WorldScene, T, type NpcSpec, type WorldConfig } from './WorldScene';
 import { touchInput } from '../input';
 import { COMIC_WORDS, PILLOW_WORDS, ensureHomeTextures, lyingTexture } from '../homeFx';
 import { FIGHT_MS, isGroggy, isWatchingTv, stopTv, tension, timeoutLeft, watchTv } from '../../core/homeLife';
 import { store } from '../../core/store';
+import { ANGRY, angryPhase, angryTick, bannedAttempt, callInfo, chaseSpeed, counter, demoAngry, detectionStep, isFound, pollTriggers, searchOver, setAngryStage, startCall, type AngryStage, type AngryTrigger, type ChaseHooks } from '../../core/angryMum';
+import { phoneLock } from '../../core/reels';
+import { sfx } from '../../core/sfx';
+import { flash, letterbox, redAlert, shake, slowMo, speedLines, sting } from '../cinematic';
+import { angrySheet, ensureAngryTextures, soulTexture, textTexture } from '../angryMumFx';
+import type { InteractSpec } from './WorldScene';
 import { ROOM_OBJECTS, SCHOOL_SPOTS } from '../../domain/homeLayout';
 import { itemName } from '../../domain/items';
 import { scheduleFor, type HomeSpot } from '../../domain/world';
@@ -115,6 +122,8 @@ const FIGHT_TOTAL = FIGHT_MS;
 const FIGHT_PHASE_PILLOW = 2000;
 const SOFA_SEAT = { x: 11 * T + 14, y: 214 };
 const BED_SIDE = { x: c(2) + 6, y: b(3) - 2 };
+/** furniture that wobbles when Angry Mum barrels past */
+const KNOCKABLE = new Set(['plant', 'lamp', 'dining-table', 'table-set', 'coffee-table', 'drying-rack', 'drying-rack-full', 'toybox', 'toybox-full', 'bin', 'bin-full', 'laundry', 'laundry-full', 'sofa', 'shoe-rack', 'shoe-rack-empty', 'school-bag']);
 const ROLE_SLOT: Partial<Record<Role, number>> ={ mother: 0, father: 0, guardian: 1, 'older-sibling': 1, 'younger-sibling': 2, grandparent: 0 };
 
 export class HomeScene extends WorldScene {
@@ -370,6 +379,22 @@ export class HomeScene extends WorldScene {
 
   protected afterCreate() {
     ensureHomeTextures(this);
+    ensureAngryTextures(this);
+    this.angryReset();
+    setAngryStage(this.stage);
+    // dev/demo hooks (dev builds, or any build opened with ?demo=1 for live pitches):
+    // __angry.demo() forces Angry Mum Mode, __angry.call() makes a parent call you
+    if (demoHooksEnabled()) (window as unknown as { __angry?: unknown }).__angry = {
+      demo: (trigger?: AngryTrigger) => demoAngry(store, trigger),
+      call: () => startCall(store, true),
+      phase: () => angryPhase(store),
+    };
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.angryShutdown());
+    this.unsub.push(
+      store.bus.on('game', (ev) => {
+        if (ev.type === 'interact' && ev.target.startsWith('hide:')) this.amHide(ev.target.slice(5));
+      }),
+    );
     this.controlled = new Set();
     this.savedWander = new Map();
     this.puppets = new Map();
@@ -468,10 +493,12 @@ export class HomeScene extends WorldScene {
       this.sleepNight = false;
       this.getUp();
     }
+    this.angryFrame(delta);
     this.homeTimer += delta;
     if (this.homeTimer > 2000) {
       this.homeTimer = 0;
       tension(store); // lazy cool-down
+      pollTriggers(store);
     }
   }
 
@@ -955,6 +982,665 @@ export class HomeScene extends WorldScene {
     this.player.body.reset(p.x, p.y);
     this.playerShadow.setVisible(true);
     this.lock('tv', false);
+  }
+
+  // =====================================================================================
+  // ANGRY MUM MODE — the visuals (logic & flow live in core/angryMum.ts)
+  // =====================================================================================
+
+  private amE?: FamEntry;
+  private amAura?: Phaser.GameObjects.Image;
+  private amFx: Phaser.GameObjects.GameObject[] = [];
+  private amTimers: Phaser.Time.TimerEvent[] = [];
+  private amScale = 1;
+  private amSteamAt = 0;
+  private amSteamEvery = 260;
+  private amCount?: Phaser.GameObjects.Image;
+  private amBubble?: { img: Phaser.GameObjects.Image; id: string; until: number };
+  private amCallBar?: Phaser.GameObjects.Image[];
+  private amPhoneSeen = false;
+  private amSavedIts?: InteractSpec[];
+  private amZoom = 0;
+  private amEscort?: { e: FamEntry };
+  private amLecture?: { objs: Phaser.GameObjects.GameObject[]; timers: Phaser.Time.TimerEvent[]; sib?: FamEntry; grand?: FamEntry; from: { x: number; y: number } };
+  private amChase?: {
+    e: FamEntry;
+    hooks: ChaseHooks;
+    ms: number;
+    shoutAt: number;
+    beepAt: number;
+    dustAt: number;
+    linesAt: number;
+    pathAt: number;
+    path: { x: number; y: number }[];
+    hidden?: { id: string; x: number; y: number; eyes: Phaser.GameObjects.Image; bar: Phaser.GameObjects.Image[]; meter: number; ms: number; room: Room; plan: { x: number; y: number }[]; walking: boolean; pauseUntil: number; cone?: Phaser.GameObjects.Image };
+    slide?: { vx: number; vy: number; until: number };
+    knocked: Map<Phaser.GameObjects.Image, number>;
+    puddle: Phaser.GameObjects.Image;
+    done: boolean;
+  };
+
+  private angryReset() {
+    this.amE = this.amAura = this.amCount = this.amBubble = this.amCallBar = this.amSavedIts = this.amEscort = this.amLecture = this.amChase = undefined;
+    this.amFx = [];
+    this.amTimers = [];
+    this.amScale = 1;
+    this.amZoom = 0;
+    this.amPhoneSeen = false;
+    this.amFollow = [];
+  }
+
+  private angryShutdown() {
+    const ch = this.amChase;
+    if (ch && !ch.done) {
+      ch.done = true;
+      // ran out of the house mid-chase: she gives up… for now
+      setTimeout(() => ch.hooks.escaped(), 0);
+    }
+    setAngryStage(null);
+  }
+
+  private stage: AngryStage = {
+    ready: (id) => {
+      const e = this.fam.get(id);
+      return !!e && e.actor.sprite.active && !this.transitioning && !!this.player?.active && !this.amChase;
+    },
+    transform: (id, title, done) => this.amTransform(id, title, done),
+    yell: (text) => this.amYell(text),
+    count: (label) => this.amCountShow(label),
+    deflate: (id) => this.amDeflate(id),
+    angrier: (id) => this.amAngrier(id),
+    chase: (id, hooks) => this.amStartChase(id, hooks),
+    escort: (id, done) => this.amDoEscort(id, done),
+    lecture: (id, on) => (on ? this.amLectureOn(id) : this.amLectureOff()),
+    calm: (id) => this.amCalm(id),
+    approach: (id, done) => this.amApproach(id, done),
+    bubble: (id, text, loud) => this.amShowBubble(id, text, loud ?? false, text ? 60000 : 0),
+    distanceTo: (id) => {
+      const e = this.fam.get(id);
+      if (!e || !e.actor.sprite.active || !this.player?.active) return null;
+      return Phaser.Math.Distance.Between(e.actor.sprite.x, e.actor.sprite.y, this.player.x, this.player.y);
+    },
+  };
+
+  private amTrack<T extends Phaser.GameObjects.GameObject>(o: T): T {
+    this.amFx.push(o);
+    return o;
+  }
+
+  /** ~3 s transformation: letterbox, red alert, camera punch-in, red face, steam, aura, growth, thud. */
+  private amTransform(id: string, title: string, done: () => void) {
+    const e = this.fam.get(id);
+    if (!e) return done();
+    if (isWatchingTv(store)) stopTv(store);
+    if (this.lying) this.getUp();
+    this.amE = e;
+    const spr = e.actor.sprite;
+    this.take(e);
+    this.lock('angry', true);
+    this.player.setVelocity(0, 0);
+    this.puppets.set(spr, { dir: 'down', walk: false }); // face the camera: we want to SEE that face
+    this.facing = this.dirOf(spr.x - this.player.x, spr.y - this.player.y);
+    const cam = this.cameras.main;
+    this.amZoom = cam.zoom;
+    letterbox(true);
+    redAlert(true);
+    sting('danger');
+    cam.stopFollow();
+    cam.pan(spr.x, spr.y - 12, 450, 'Cubic.easeOut');
+    this.tweens.add({ targets: cam, zoom: this.amZoom + 1, duration: 450, ease: 'Cubic.easeOut' });
+    this.rise('fx:exclaim', this.player.x, this.player.y - 28);
+    // lights flicker
+    [500, 640, 820, 1000].forEach((t) => this.time.delayedCall(t, () => flash(0x000000, 70)));
+    this.time.delayedCall(900, () => {
+      const m = store.member(id);
+      spr.setTexture(angrySheet(this, `char:${id}`, m?.appearance, m?.role ?? 'mother'), spr.frame.name as unknown as number);
+      this.amAura = this.amTrack(this.add.image(spr.x, spr.y + 4, 'am:aura0').setOrigin(0.5, 1).setBlendMode(Phaser.BlendModes.ADD).setAlpha(0).setDepth(spr.depth - 0.5));
+      this.tweens.add({ targets: this.amAura, alpha: 0.9, duration: 300 });
+      this.amSteamEvery = 220;
+      shake(0.004, 300);
+    });
+    this.time.delayedCall(1500, () => {
+      this.amScale = 1.25;
+      this.tweens.add({ targets: spr, scaleX: 1.25, scaleY: 1.25, duration: 260, ease: 'Back.easeOut' });
+      this.popWord('am:thud', spr.x, spr.y - 6, 700);
+      shake(0.014, 320);
+      speedLines(600, 0xffd0c0);
+      if (store.ui.sound) sfx.play('alert');
+    });
+    this.time.delayedCall(2000, () => {
+      const t = this.amTrack(this.add.image(spr.x, spr.y - 44, textTexture(this, 'title', title)).setDepth(16000).setScale(2.4).setAlpha(0));
+      this.tweens.add({ targets: t, scale: 0.55, alpha: 1, duration: 220, ease: 'Back.easeOut' });
+      this.tweens.add({ targets: t, alpha: 0, y: t.y - 6, delay: 1300, duration: 350, onComplete: () => t.destroy() });
+    });
+    this.time.delayedCall(3000, () => {
+      this.tweens.add({ targets: cam, zoom: this.amZoom, duration: 400 });
+      cam.startFollow(this.player, true, 0.15, 0.15);
+      done();
+    });
+  }
+
+  /** Screen-centre (world coords) helper for giant text. */
+  private amScreen(fy: number) {
+    const v = this.cameras.main.worldView;
+    return { x: v.centerX, y: v.y + v.height * fy, w: v.width };
+  }
+
+  private amYell(text: string) {
+    const key = textTexture(this, 'yell', text);
+    const p = this.amScreen(0.24);
+    const img = this.add.image(p.x, p.y, key).setScrollFactor(1).setDepth(32000);
+    const fit = Math.min(1, (p.w * 0.92) / img.width);
+    img.setScale(fit * 3).setAlpha(0);
+    this.tweens.add({ targets: img, scale: fit, alpha: 1, duration: 200, ease: 'Back.easeOut', onComplete: () => shake(0.016, 380) });
+    // echoes ripple outward and fade
+    for (let i = 1; i <= 3; i++) {
+      this.time.delayedCall(220 + i * 260, () => {
+        const echo = this.add.image(p.x, p.y, key).setDepth(31999).setScale(fit).setAlpha(0.55);
+        this.tweens.add({ targets: echo, scale: fit * (1.25 + i * 0.15), alpha: 0, duration: 700, onComplete: () => echo.destroy() });
+      });
+    }
+    this.tweens.add({ targets: img, alpha: 0, delay: 2600, duration: 400, onComplete: () => img.destroy() });
+    sting('shock');
+    if (this.amE) this.popWord('am:thud', this.amE.actor.sprite.x, this.amE.actor.sprite.y - 30, 500);
+  }
+
+  private amCountShow(label: string) {
+    this.amCount?.destroy();
+    this.amCount = undefined;
+    if (!label) return;
+    const p = this.amScreen(0.3);
+    const img = this.add.image(p.x, p.y, textTexture(this, 'count', label)).setDepth(32000);
+    const fit = Math.min(1, (p.w * 0.8) / img.width);
+    img.setScale(fit * 2.6).setAlpha(0);
+    this.amCount = img;
+    this.tweens.add({ targets: img, scale: fit, alpha: 1, duration: 180, ease: 'Back.easeOut' });
+    shake(0.01, 220);
+    sting('danger');
+    slowMo(0.25, 1600); // the world holds its breath between numbers
+  }
+
+  private amSteamPuff(spr: Phaser.GameObjects.Sprite, big = false) {
+    const h = 24 * this.amScale;
+    for (const side of [-1, 1]) {
+      const s = this.add.image(spr.x + side * 6 * this.amScale, spr.y - h * 0.62, 'am:steam').setDepth(15002).setScale(big ? 1 : 0.6);
+      this.tweens.add({ targets: s, x: s.x + side * Phaser.Math.Between(4, 9), y: s.y - Phaser.Math.Between(8, 14), scale: big ? 1.8 : 1.1, alpha: 0, duration: big ? 900 : 650, ease: 'Sine.easeOut', onComplete: () => s.destroy() });
+    }
+  }
+
+  private amDeflate(id: string) {
+    const e = this.fam.get(id);
+    if (!e) return;
+    const spr = e.actor.sprite;
+    this.popWord('am:hiss', spr.x, spr.y - 34, 1200);
+    for (let i = 0; i < 4; i++) this.time.delayedCall(i * 120, () => this.amSteamPuff(spr, true));
+    this.amScale = 1;
+    this.tweens.add({ targets: spr, scaleX: 1, scaleY: 1, duration: 900, ease: 'Sine.easeOut' });
+    this.tweens.add({ targets: spr, angle: { from: -3, to: 3 }, duration: 90, yoyo: true, repeat: 4, onComplete: () => spr.setAngle(0) });
+    if (this.amAura) this.tweens.add({ targets: this.amAura, alpha: 0, duration: 900 });
+    this.time.delayedCall(700, () => spr.setTexture(`char:${id}`, spr.frame.name as unknown as number));
+    this.amSteamEvery = 0;
+    redAlert(false);
+  }
+
+  private amAngrier(id: string) {
+    const e = this.fam.get(id);
+    if (!e) return;
+    const spr = e.actor.sprite;
+    this.amScale = 1.4;
+    this.tweens.add({ targets: spr, scaleX: 1.4, scaleY: 1.4, duration: 220, ease: 'Back.easeOut' });
+    if (this.amAura) this.amAura.setScale(1.3);
+    this.amSteamEvery = 120;
+    flash(0xff3020, 160);
+    shake(0.02, 400);
+    sting('danger');
+    this.popWord('am:thud', spr.x, spr.y - 40, 600);
+  }
+
+  private amCalm(id: string) {
+    const e = this.fam.get(id);
+    this.amSteamEvery = 0;
+    this.amCountShow('');
+    if (e) {
+      const spr = e.actor.sprite;
+      spr.setTexture(`char:${id}`, spr.frame.name as unknown as number);
+      this.tweens.add({ targets: spr, scaleX: 1, scaleY: 1, duration: 500 });
+      if (this.controlled.has(id) && !this.isBusyWalking(e)) this.returning.push({ e, home: { x: spr.x, y: spr.y }, free: 0 });
+    }
+    this.amScale = 1;
+    if (this.amAura) {
+      const a = this.amAura;
+      this.amAura = undefined;
+      this.tweens.add({ targets: a, alpha: 0, duration: 600, onComplete: () => a.destroy() });
+    }
+    redAlert(false);
+    letterbox(false);
+    this.amEndChase();
+    this.amLectureOff();
+    this.amEscort = undefined;
+    this.amE = undefined;
+    if (this.amZoom) {
+      this.tweens.add({ targets: this.cameras.main, zoom: this.amZoom, duration: 500 });
+      this.amZoom = 0;
+    }
+    this.cameras.main.startFollow(this.player, true, 0.15, 0.15);
+    this.lock('angry', false);
+  }
+
+  private amShowBubble(id: string, text: string | null, loud: boolean, life: number) {
+    this.amBubble?.img.destroy();
+    this.amBubble = undefined;
+    if (!text) return;
+    const e = this.fam.get(id);
+    if (!e) return;
+    const img = this.add.image(e.actor.sprite.x, e.actor.sprite.y - 30, textTexture(this, loud ? 'loud' : 'bubble', text)).setOrigin(0.15, 1).setDepth(16500).setScale(0.3);
+    this.tweens.add({ targets: img, scale: 1, duration: 160, ease: 'Back.easeOut' });
+    this.amBubble = { img, id, until: this.time.now + life };
+    if (loud) this.cameras.main.shake(160, 0.004);
+  }
+
+  // ---------------------------------------------------------------- chase & hide
+
+  private amStartChase(id: string, hooks: ChaseHooks) {
+    const e = this.fam.get(id);
+    if (!e) return hooks.escaped();
+    this.take(e);
+    this.lock('angry', false);
+    this.player.body.enable = true;
+    this.player.setVisible(true);
+    // only hiding spots are interactable during the chase
+    this.amSavedIts = this.interactables;
+    const hide = (hid: string, x: number, y: number, label: string): InteractSpec => ({ id: `hide:${hid}`, x, y, r: 16, label });
+    this.interactables = [
+      hide('bed', c(1) + 6, b(3) - 10, '🙈 Hide under your bed'),
+      hide('wardrobe', c(7), b(2) + 4, '🙈 Hide in the wardrobe'),
+      hide('sofa', 11 * T + 14, b(13) - 4, '🙈 Hide behind the sofa curtain'),
+    ];
+    const puddle = this.amTrack(this.add.image(19 * T, b(4) + 2, 'am:wet').setDepth(-800));
+    this.amChase = { e, hooks, ms: 0, shoutAt: 0, beepAt: 0, dustAt: 0, linesAt: 0, pathAt: 0, path: [], knocked: new Map(), puddle, done: false };
+    if (this.amZoom) this.tweens.add({ targets: this.cameras.main, zoom: this.amZoom, duration: 500 }); // slight zoom-out
+    speedLines(700);
+    sting('danger');
+    store.toast('🏃 RUN! (Hide: under your bed, in the wardrobe, or behind the sofa curtain — press E)', 'bad');
+    this.amShowBubble(id, hooks.shout('chase'), true, 2200);
+  }
+
+  private amEndChase() {
+    const ch = this.amChase;
+    if (!ch) return;
+    ch.done = true;
+    if (ch.hidden) this.amUnhide(false);
+    if (this.amSavedIts) this.interactables = this.amSavedIts;
+    this.amSavedIts = undefined;
+    ch.puddle.destroy();
+    this.amChase = undefined;
+    this.player.body.enable = true;
+    this.player.setVisible(true);
+    this.playerShadow.setVisible(true);
+    this.player.setAngle(0);
+  }
+
+  private amHide(spot: string) {
+    const ch = this.amChase;
+    if (!ch || ch.done) return;
+    if (ch.hidden) return this.amUnhide(true);
+    const it = this.interactables.find((i) => i.id === `hide:${spot}`);
+    if (!it) return;
+    this.player.setVelocity(0, 0);
+    this.player.setVisible(false);
+    this.playerShadow.setVisible(false);
+    this.player.body.enable = false;
+    this.lock('hide', true);
+    const eyes = this.add.image(it.x, it.y + (spot === 'bed' ? 8 : 2), 'am:eyes').setDepth(it.y + 30);
+    this.tweens.add({ targets: eyes, scaleY: 0.2, duration: 80, yoyo: true, repeat: -1, repeatDelay: 1800 });
+    const bg = this.add.image(it.x, it.y - 22, 'am:px').setDisplaySize(22, 3).setTint(0x222233).setDepth(16000);
+    const fill = this.add.image(it.x - 11, it.y - 22, 'am:px').setOrigin(0, 0.5).setDisplaySize(0.01, 3).setTint(0xffd23a).setDepth(16001);
+    const room = this.roomAt(it.x, it.y + 4);
+    const rooms: Room[] = ['kitchen', 'hall', 'living', 'bedroom'];
+    const others = rooms.filter((r) => r !== room && r !== this.roomAt(ch.e.actor.sprite.x, ch.e.actor.sprite.y));
+    const centre = (r: Room) => {
+      const R = ROOM_RECT[r];
+      return { x: (R.x0 + R.x1) / 2, y: (R.y0 + R.y1) / 2 + 6 };
+    };
+    // she searches the wrong rooms first… then yours (and stands RIGHT next to you)
+    const plan = [centre(others[0]), centre(room), { x: it.x + 18, y: it.y + 10 }, centre(others[1] ?? others[0])];
+    ch.hidden = { id: spot, x: it.x, y: it.y, eyes, bar: [bg, fill], meter: 0, ms: 0, room, plan, walking: false, pauseUntil: this.time.now + 900 };
+    this.amShowBubble(ch.e.member.id, 'Where did you GO?!', true, 1600);
+    store.toast('🤫 Hold still! Moving fills the meter. She gives up if she can’t find you.', 'info');
+  }
+
+  private amUnhide(resume: boolean) {
+    const ch = this.amChase;
+    const h = ch?.hidden;
+    if (!ch || !h) return;
+    h.eyes.destroy();
+    h.bar.forEach((o) => o.destroy());
+    h.cone?.destroy();
+    ch.hidden = undefined;
+    this.player.body.enable = true;
+    this.player.body.reset(h.x, h.y + 12);
+    this.player.setVisible(true);
+    this.playerShadow.setVisible(true);
+    this.lock('hide', false);
+    if (resume) this.amShowBubble(ch.e.member.id, 'THERE you are!', true, 1600);
+  }
+
+  private amChaseFrame(delta: number) {
+    const ch = this.amChase;
+    if (!ch || ch.done) return;
+    if (store.blocking) return;
+    const spr = ch.e.actor.sprite;
+    const now = this.time.now;
+    ch.ms += delta;
+    if (store.ui.sound && now > ch.beepAt) {
+      ch.beepAt = now + 380;
+      sfx.play(Math.floor(now / 380) % 2 ? 'blip' : 'step');
+    }
+    if (ch.hidden) return this.amSearchFrame(ch, delta);
+    // out of breath → she gives up (for now)
+    if (ch.ms > ANGRY.chaseMaxMs) return this.amChaseOver(false);
+    // run towards the player along the room route
+    if (now > ch.pathAt) {
+      ch.pathAt = now + 350;
+      ch.path = this.route({ x: spr.x, y: spr.y }, { x: this.player.x, y: this.player.y });
+    }
+    const tgt = ch.path[0] ?? { x: this.player.x, y: this.player.y };
+    const dx = tgt.x - spr.x;
+    const dy = tgt.y - spr.y;
+    const d = Math.hypot(dx, dy);
+    const sp = (chaseSpeed(72) * delta) / 1000;
+    if (d <= sp) {
+      spr.setPosition(tgt.x, tgt.y);
+      ch.path.shift();
+    } else spr.setPosition(spr.x + (dx / d) * sp, spr.y + (dy / d) * sp);
+    this.puppets.set(spr, { dir: this.dirOf(dx, dy), walk: true });
+    if (now > ch.dustAt) {
+      ch.dustAt = now + 110;
+      const dust = this.add.image(spr.x - Math.sign(dx) * 5, spr.y - 1, 'am:steam').setDepth(spr.y - 1).setScale(0.45).setTint(0xcbb89a);
+      this.tweens.add({ targets: dust, scale: 0.9, alpha: 0, y: dust.y - 3, duration: 420, onComplete: () => dust.destroy() });
+    }
+    if (now > ch.shoutAt) {
+      ch.shoutAt = now + 2600;
+      this.amShowBubble(ch.e.member.id, ch.hooks.shout('chase'), true, 2000);
+    }
+    if (now > ch.linesAt) {
+      ch.linesAt = now + 4200;
+      speedLines(500);
+    }
+    // furniture in the way wobbles, cushions fly
+    for (const dyn of this.dyn) {
+      const img = dyn.img;
+      if (!img.active || !KNOCKABLE.has(img.texture.key)) continue;
+      if (Math.abs(img.x - spr.x) > 16 || Math.abs(img.y - spr.y) > 10) continue;
+      if ((ch.knocked.get(img) ?? 0) > now) continue;
+      ch.knocked.set(img, now + 1500);
+      this.tweens.add({ targets: img, angle: { from: -8, to: 8 }, duration: 70, yoyo: true, repeat: 3, onComplete: () => img.setAngle(0) });
+      if (img.texture.key === 'sofa' || img.texture.key.startsWith('dining') || img.texture.key.startsWith('table')) this.amCushions(img.x, img.y - 10);
+      else this.popImg('hl:star', img.x, img.y - 14, 300);
+    }
+    // wet kitchen floor: whoosh!
+    const pl = this.player;
+    if (!ch.slide && Math.abs(pl.x - ch.puddle.x) < 14 && Math.abs(pl.y - ch.puddle.y) < 6 && pl.body.velocity.lengthSq() > 100) {
+      const v = pl.body.velocity.clone().normalize();
+      ch.slide = { vx: v.x * 150, vy: v.y * 150, until: now + 520 };
+      this.lock('slide', true);
+      this.popWord('hl:pword0', pl.x, pl.y - 26, 500);
+      this.tweens.add({ targets: pl, angle: { from: -15, to: 15 }, duration: 100, yoyo: true, repeat: 2, onComplete: () => pl.setAngle(0) });
+    }
+    if (ch.slide) {
+      if (now > ch.slide.until) {
+        ch.slide = undefined;
+        this.lock('slide', false);
+      } else pl.setVelocity(ch.slide.vx, ch.slide.vy);
+    }
+    // caught!
+    if (Phaser.Math.Distance.Between(spr.x, spr.y, pl.x, pl.y) < 14) this.amChaseOver(true);
+  }
+
+  private amCushions(x: number, y: number) {
+    for (let i = 0; i < 2; i++) {
+      const cu = this.add.image(x, y, 'am:cushion').setDepth(15500);
+      const tx = x + Phaser.Math.Between(-30, 30);
+      this.tweens.add({ targets: cu, x: tx, angle: Phaser.Math.Between(-360, 360), duration: 600, ease: 'Sine.easeOut' });
+      this.tweens.add({ targets: cu, y: y - 22, duration: 300, yoyo: true, ease: 'Quad.easeOut', onComplete: () => this.tweens.add({ targets: cu, alpha: 0, delay: 900, duration: 300, onComplete: () => cu.destroy() }) });
+    }
+  }
+
+  private amSearchFrame(ch: NonNullable<HomeScene['amChase']>, delta: number) {
+    const h = ch.hidden!;
+    const spr = ch.e.actor.sprite;
+    const now = this.time.now;
+    h.ms += delta;
+    // walk the search plan, pausing to look around with a search cone
+    if (!h.walking && now > h.pauseUntil) {
+      const next = h.plan.shift();
+      if (next) {
+        h.walking = true;
+        h.cone?.destroy();
+        h.cone = undefined;
+        this.walkActor(ch.e, next, () => {
+          h.walking = false;
+          h.pauseUntil = this.time.now + 1700;
+          this.take(ch.e);
+          const near = Phaser.Math.Distance.Between(spr.x, spr.y, h.x, h.y) < 40;
+          this.amShowBubble(ch.e.member.id, ch.hooks.shout(near ? 'near' : 'search'), false, 1600);
+          h.cone = this.add.image(spr.x, spr.y - 8, 'am:cone').setOrigin(0, 0.5).setDepth(15400).setAlpha(0.8);
+          const base = Phaser.Math.Angle.Between(spr.x, spr.y, h.x, h.y) + Phaser.Math.FloatBetween(-0.8, 0.8);
+          h.cone.setRotation(base);
+          this.tweens.add({ targets: h.cone, rotation: base + 0.9, duration: 800, yoyo: true });
+        }, 60);
+      }
+    }
+    const k = this.keys;
+    const cur = this.cursors;
+    const moving = cur.left.isDown || cur.right.isDown || cur.up.isDown || cur.down.isDown || k.W.isDown || k.A.isDown || k.S.isDown || k.D.isDown;
+    if (moving) h.eyes.setX(h.x + Math.sin(now / 40) * 1.5);
+    const dist = Phaser.Math.Distance.Between(spr.x, spr.y, h.x, h.y);
+    h.meter = detectionStep(h.meter, { moving, dist, sameRoom: this.roomAt(spr.x, spr.y) === h.room, dtMs: delta });
+    h.bar[1].setDisplaySize(Math.max(0.01, (h.meter / 100) * 22), 3).setTint(h.meter > 66 ? 0xff4a3a : 0xffd23a);
+    if (isFound(h.meter)) {
+      this.popWord('am:gotcha', h.x, h.y - 30, 900);
+      shake(0.01, 250);
+      this.amShowBubble(ch.e.member.id, ch.hooks.shout('lost'), true, 1800);
+      this.tweens.killTweensOf(spr);
+      this.amUnhide(false);
+      return this.amChaseOver(true);
+    }
+    if (searchOver(h.ms)) {
+      this.tweens.killTweensOf(spr);
+      return this.amChaseOver(false);
+    }
+  }
+
+  private amChaseOver(caught: boolean) {
+    const ch = this.amChase;
+    if (!ch || ch.done) return;
+    const hooks = ch.hooks;
+    this.amShowBubble(ch.e.member.id, null, false, 0);
+    if (caught) {
+      const spr = ch.e.actor.sprite;
+      this.popWord('am:gotcha', spr.x, spr.y - 34, 900);
+      this.player.setVelocity(0, 0);
+    }
+    this.amEndChase();
+    this.lock('slide', false);
+    this.lock('hide', false);
+    if (caught) {
+      this.lock('angry', true);
+      hooks.caught();
+    } else {
+      this.amCalm(ch.e.member.id);
+      hooks.escaped();
+    }
+  }
+
+  // ---------------------------------------------------------------- escort & lecture
+
+  /** Walk side by side to the sofa (no grabbing — she just walks you there). */
+  private amDoEscort(id: string, done: () => void) {
+    const e = this.fam.get(id);
+    if (!e) return done();
+    this.lock('angry', true);
+    this.amEndChase();
+    this.amEscort = { e };
+    this.player.body.enable = false;
+    this.walkActor(e, { x: SOFA_SEAT.x - 18, y: SOFA_SEAT.y - 2 }, () => {
+      this.amEscort = undefined;
+      done();
+    }, 80);
+  }
+
+  private amLectureOn(id: string) {
+    const e = this.fam.get(id);
+    if (!e) return;
+    const pl = this.player;
+    this.amLecture = { objs: [], timers: [], from: { x: SOFA_SEAT.x, y: b(14) - 2 } };
+    const L = this.amLecture;
+    pl.body.enable = false;
+    pl.setPosition(SOFA_SEAT.x, SOFA_SEAT.y);
+    this.playerShadow.setVisible(false);
+    this.facing = 'left';
+    const spr = e.actor.sprite;
+    this.face(spr, pl.x, pl.y);
+    // the wall clock spins (time-lapse)
+    for (const [len, ms] of [[1, 260], [0.7, 1800]] as const) {
+      const hand = this.add.image(c(12), b(9) - 12, 'am:hand').setOrigin(0.5, 1).setScale(1, len).setDepth(b(9) + 5);
+      this.tweens.add({ targets: hand, angle: 360, duration: ms, repeat: -1 });
+      L.objs.push(hand);
+    }
+    // she talks… and talks… (bobbing)
+    this.tweens.add({ targets: spr, scaleY: this.amScale * 1.06, duration: 160, yoyo: true, repeat: -1 });
+    // the soul leaves the body… and gets yanked back
+    const soulKey = soulTexture(this, 'char:player');
+    L.timers.push(
+      this.time.addEvent({
+        delay: 2600,
+        loop: true,
+        startAt: 1600,
+        callback: () => {
+          const soul = this.add.image(pl.x, pl.y, soulKey).setOrigin(0.5, 1).setDepth(16000).setAlpha(0.75);
+          L.objs.push(soul);
+          this.tweens.add({ targets: soul, y: pl.y - 26, angle: 8, duration: 1100, ease: 'Sine.easeOut', onComplete: () => this.tweens.add({ targets: soul, y: pl.y, angle: 0, duration: 140, ease: 'Back.easeIn', onComplete: () => soul.destroy() }) });
+        },
+      }),
+    );
+    L.timers.push(this.time.addEvent({ delay: 1500, loop: true, callback: () => this.rise('am:zzz', pl.x + 6, pl.y - 26) }));
+    // the grandparent nods along; the sibling smirks from the doorway
+    for (const f of this.fam.values()) {
+      if (f.member.id === id || !f.actor.sprite.active) continue;
+      if (f.member.role === 'grandparent') {
+        L.grand = f;
+        this.take(f);
+        this.face(f.actor.sprite, spr.x, spr.y);
+        this.tweens.add({ targets: f.actor.sprite, y: f.actor.sprite.y + 1, duration: 300, yoyo: true, repeat: -1 });
+        L.timers.push(this.time.addEvent({ delay: 2200, loop: true, callback: () => this.popWord('am:nod', f.actor.sprite.x, f.actor.sprite.y - 28, 900) }));
+      } else if ((f.member.role === 'younger-sibling' || f.member.role === 'older-sibling') && !L.sib) {
+        L.sib = f;
+        this.walkActor(f, { x: 216, y: 176 }, () => {
+          this.face(f.actor.sprite, pl.x, pl.y);
+          L.timers.push(this.time.addEvent({ delay: 1900, loop: true, callback: () => this.popWord('am:smirk', f.actor.sprite.x, f.actor.sprite.y - 28, 900) }));
+        }, 90);
+      }
+    }
+  }
+
+  private amLectureOff() {
+    const L = this.amLecture;
+    if (!L) return;
+    this.amLecture = undefined;
+    L.timers.forEach((t) => t.remove());
+    L.objs.forEach((o) => o.active && o.destroy());
+    if (this.amE) {
+      const spr = this.amE.actor.sprite;
+      this.tweens.killTweensOf(spr);
+      spr.setScale(this.amScale);
+    }
+    if (L.grand) {
+      this.tweens.killTweensOf(L.grand.actor.sprite);
+      this.release(L.grand);
+    }
+    if (L.sib && this.fam.get(L.sib.member.id) === L.sib) this.returning.push({ e: L.sib, home: { ...this.placeFor(L.sib.member, (L.sib.spot === 'away' ? 'living' : L.sib.spot) as Exclude<HomeSpot, 'away'>, 0) }, free: 0 });
+    this.player.body.enable = true;
+    this.player.body.reset(L.from.x, L.from.y);
+    this.playerShadow.setVisible(true);
+  }
+
+  private amApproach(id: string, done: () => void) {
+    const e = this.fam.get(id);
+    if (!e) return done();
+    const spr = e.actor.sprite;
+    const home = { x: spr.x, y: spr.y };
+    this.lock('angry-approach', true);
+    const snack = angryPhase(store) === 'cool' ? this.add.image(spr.x, spr.y - 14, 'am:snack').setDepth(16000) : undefined;
+    this.walkActor(e, this.besidePlayer(spr), () => {
+      this.face(spr, this.player.x, this.player.y);
+      this.facing = this.dirOf(spr.x - this.player.x, spr.y - this.player.y);
+      this.lock('angry-approach', false);
+      if (snack) this.time.delayedCall(1500, () => snack.destroy());
+      this.returning.push({ e, home, free: 0 });
+      done();
+    }, 85);
+    if (snack) this.amFollow.push({ img: snack, spr, dy: -14 });
+  }
+  private amFollow: { img: Phaser.GameObjects.Image; spr: Phaser.GameObjects.Sprite; dy: number }[] = [];
+
+  /** Per-frame: aura/steam/bubbles follow, call timer, chase, phone attempts, angry logic tick. */
+  private angryFrame(delta: number) {
+    const now = this.time.now;
+    angryTick(store, delta);
+    const e = this.amE;
+    if (e?.actor.sprite.active) {
+      const spr = e.actor.sprite;
+      if (this.amAura?.active) {
+        this.amAura.setPosition(spr.x + Phaser.Math.FloatBetween(-0.6, 0.6), spr.y + 4).setDepth(spr.depth - 0.5);
+        if (Math.floor(now / 90) % 2 !== Number(this.amAura.texture.key.endsWith('1'))) {
+          this.amAura.setTexture(`am:aura${Math.floor(now / 90) % 2}`);
+          this.amAura.setAlpha(Math.min(this.amAura.alpha, 1) > 0.1 ? 0.7 + Math.random() * 0.3 : this.amAura.alpha);
+        }
+      }
+      if (this.amSteamEvery && now - this.amSteamAt > this.amSteamEvery) {
+        this.amSteamAt = now;
+        this.amSteamPuff(spr);
+      }
+      if (this.amEscort && this.player.active) {
+        // walking side by side
+        const es = this.amEscort.e.actor.sprite;
+        this.player.setPosition(es.x - 13, es.y);
+        this.playerShadow.setPosition(this.player.x, this.player.y);
+        const p = this.puppets.get(es);
+        this.puppets.set(this.player, { dir: p?.dir ?? 'down', walk: !!p?.walk });
+      } else this.puppets.delete(this.player);
+    }
+    this.amFollow = this.amFollow.filter((f) => f.img.active && (f.img.setPosition(f.spr.x, f.spr.y + f.dy).setDepth(f.spr.depth + 1), true));
+    if (this.amBubble) {
+      const f = this.fam.get(this.amBubble.id);
+      if (!f || now > this.amBubble.until) {
+        this.amBubble.img.destroy();
+        this.amBubble = undefined;
+      } else this.amBubble.img.setPosition(f.actor.sprite.x - 4, f.actor.sprite.y - 25 * (f === this.amE ? this.amScale : 1) - 2);
+    }
+    // parent's call: a shrinking timer bar over the player
+    const call = callInfo(store);
+    if (call && this.player.active) {
+      if (!this.amCallBar) this.amCallBar = [this.add.image(0, 0, 'am:px').setDepth(16000).setTint(0x222233), this.add.image(0, 0, 'am:px').setOrigin(0, 0.5).setDepth(16001)];
+      const [bg, fg] = this.amCallBar;
+      bg.setPosition(this.player.x, this.player.y - 30).setDisplaySize(20, 3);
+      fg.setPosition(this.player.x - 10, this.player.y - 30).setDisplaySize(Math.max(0.01, (call.leftMs / call.windowMs) * 20), 3).setTint(call.level === 2 ? 0xff4a3a : 0x5ad1ff);
+      if (call.level === 2 && Math.floor(now / 300) % 2) bg.setTint(0xff4a3a);
+      else bg.setTint(0x222233);
+    } else if (this.amCallBar) {
+      this.amCallBar.forEach((o) => o.destroy());
+      this.amCallBar = undefined;
+    }
+    this.amChaseFrame(delta);
+    // trying to use a confiscated phone
+    const m = store.ui.modal;
+    const phoneOpen = m?.type === 'phone' || m?.type === 'reels';
+    if (phoneOpen && !this.amPhoneSeen && phoneLock(store.state).locked) {
+      this.amPhoneSeen = true;
+      if (counter(store, 'phone') >= 1) store.openModal(null); // second try: she's had enough
+      bannedAttempt(store, 'phone');
+    } else if (!phoneOpen) this.amPhoneSeen = false;
   }
 
   private placeFor(m: FamilyMember, spot: Exclude<HomeSpot, 'away'>, index: number): Place {

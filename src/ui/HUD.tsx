@@ -16,6 +16,7 @@ import { openPhone } from './PhoneReels';
 import { currentSession } from '../services/family';
 import { openVoiceInbox, useCallSnap } from './PhoneCall';
 import { calls } from '../core/voiceMsg';
+import { RewindButton } from './RewindOverlay';
 
 /** Phone button / P key: family games open the phone (voice notes + call home); otherwise call home. */
 export function phonePress() {
@@ -268,6 +269,7 @@ function StatusColumn() {
         </span>
       </div>
       <div className="hud-actions">
+        <RewindButton />
         {hints && (
           <button
             className={`btn ${hintOn ? 'hint-ready' : ''}`}

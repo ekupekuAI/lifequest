@@ -9,6 +9,7 @@ import type { FamilyMember, Memory, Role } from '../domain/types';
 import { scheduleFor } from '../domain/world';
 import { SCREEN_LIMITS, TENSION, addScreenTime, availableGuardian, conduct, intervene, recordConduct } from './conduct';
 import type { DialogueChoice, DialogueLine, GameStore } from './store';
+import { angryActive, bannedAttempt, triggerAngry, triggerFrom } from './angryMum';
 
 // ---------------------------------------------------------------- tuning
 
@@ -50,7 +51,7 @@ function rt(s: GameStore): Runtime {
   return r;
 }
 /** A home scene (fight / nap) is playing — ignore new home actions until it ends. */
-export const homeBusy = (s: GameStore) => rt(s).napping || Date.now() < rt(s).busyUntil;
+export const homeBusy = (s: GameStore) => rt(s).napping || Date.now() < rt(s).busyUntil || angryActive(s);
 export const isWatchingTv = (s: GameStore) => rt(s).watching;
 export const isNapping = (s: GameStore) => rt(s).napping;
 
@@ -354,6 +355,22 @@ export function fightContext(s: GameStore, sib: FamilyMember, who: FamilyMember,
 export function parentStepsIn(s: GameStore, sib: FamilyMember) {
   const { who, byPhone } = responder(s, sib);
   if (!who) return;
+  // the third fight of the day (or tension maxed out) unleashes ANGRY MUM MODE — when a guardian is home to do it
+  const c0 = conduct(s);
+  const angryTrigger = triggerFrom({ fightsToday: c0.fights, tension: c0.tension });
+  if (angryTrigger && !byPhone) {
+    const starter = (W(s)['home.provoker'] as Starter) ?? 'both';
+    const started = triggerAngry(s, angryTrigger, {
+      atFault: starter !== 'sibling',
+      after: () => {
+        fx(s, 'home:separate', sib.id);
+        c0.tension = Math.min(c0.tension, 20);
+        W(s)['home.tensionAt'] = now(s);
+        W(s)['home.fightBy'] = availableGuardian(s)?.id ?? who.id;
+      },
+    });
+    if (started) return;
+  }
   const ctx = fightContext(s, sib, who, byPhone);
   const cons = pickConsequence(ctx);
   const lines = scoldLines(ctx).filter((l) => !l.startsWith(`(${who.name} calls)`) || byPhone);
@@ -652,6 +669,15 @@ export function morningAlarm(s: GameStore, then: () => void): boolean {
       },
     ]);
   };
+  const snoozeThird = () => {
+    snoozes += 1;
+    fx(s, 'home:snooze', undefined, snoozes);
+    if (triggerFrom({ snoozes }) === 'snooze' && triggerAngry(s, 'snooze', { after: goToSchool })) return;
+    const g = availableGuardian(s);
+    if (g) s.trust(g.id, -2);
+    recordConduct(s, { kind: 'sleep', severity: 2, by: g?.id, text: 'Snoozed the alarm three times', lesson: 'An alarm only helps if you listen to the first one.' });
+    s.say([line(g, "Oh no you don't. (the curtains fly open) UP. NOW. Breakfast is getting cold.")], goToSchool);
+  };
   const snooze = () => {
     snoozes += 1;
     fx(s, 'home:snooze', undefined, snoozes);
@@ -665,7 +691,16 @@ export function morningAlarm(s: GameStore, then: () => void): boolean {
         [`${s.player.name}! That's the second snooze — you'll be late for school!`, 'The alarm is there to help you. Get up on the first ring and the whole morning is calmer.'],
         () => {
           if (g) s.trust(g.id, -2);
-          goToSchool();
+          // …and they are standing RIGHT THERE. Snooze a third time? (Angry Mum Mode.)
+          s.say([
+            {
+              ...line(g, 'Well? I am waiting.'),
+              choices: [
+                { label: "☀️ I'm up, I'm up!", tone: 'good', run: goToSchool },
+                { label: '😴 Snooze. Again. (3rd time)', tone: 'bad', hint: 'Right in front of them…', run: snoozeThird },
+              ],
+            },
+          ]);
         },
       );
     }
@@ -686,6 +721,8 @@ export function tvInteract(s: GameStore) {
   const c = conduct(s);
   if (c.tvBanned) {
     const g = availableGuardian(s);
+    // trying again during a ban: the 2nd attempt unleashes Angry Mum Mode (when a guardian is home)
+    if (bannedAttempt(s, 'tv') === 'angry') return;
     return s.say([line(undefined, `The TV stays dark. ${g ? g.name : 'A parent'} switched it off for today — no more TV until tomorrow.`)]);
   }
   const r = rt(s);

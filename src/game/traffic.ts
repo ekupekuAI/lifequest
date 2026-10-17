@@ -8,6 +8,7 @@ import Phaser from 'phaser';
 import { store } from '../core/store';
 import { availableGuardian, conduct, intervene, recordConduct } from '../core/conduct';
 import { mulberry32 } from '../core/systems';
+import { nearMiss } from './cinematicDirector';
 import {
   DRIVER_LINES,
   LinePicker,
@@ -364,6 +365,8 @@ export class Traffic {
   }
 
   update(delta: number) {
+    // cinematic slow-mo (near misses etc.) slows the cars too
+    delta *= this.scene.time?.timeScale ?? 1;
     this.frameDelta = delta;
     const dt = Math.min(delta, 50) / 1000;
     const p = this.host.player();
@@ -553,6 +556,7 @@ export class Traffic {
       this.honk(veh, inc.nearMiss ? this.lines.pick(NEAR_MISS_LINES) : this.lines.pick(DRIVER_LINES[0]));
       if (inc.nearMiss) {
         this.scene.cameras.main.shake(280, 0.008);
+        nearMiss(); // cinematic beat: slow-mo + flash + speed lines
         store.bus.emit('fx', { kind: 'exclaim' });
         store.state.stats.energy = Math.max(0, store.state.stats.energy - 3);
       } else if (inc.hard) this.scene.cameras.main.shake(140, 0.003);

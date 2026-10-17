@@ -27,6 +27,8 @@ No configuration is needed. Without Supabase credentials the game runs in **loca
 | Pause / close panels | Esc | ⏸ |
 | Hint: what to do next | H | 💡 |
 | Switch 2D ↔ 3D view | V | 3D button |
+| Phone: reels (screen time counts!) | R | 📱 |
+| Rewind time to your last big choice (3 per day) | T | ◀◀ button |
 
 ## What's playable
 
@@ -89,6 +91,36 @@ No configuration is needed. Without Supabase credentials the game runs in **loca
   - Pocket money and trust change as a result.
   - Bigger responsibilities unlock as trust grows.
 
+## v4: real-life conduct and the "WHAAAT??" update
+
+- **Behaviour has consequences** (`src/core/conduct.ts`). Screen time, sibling fights, road safety and naps are tracked per day, logged with a lesson, and shown to parents in the Parent Dashboard's **Behaviour** section. When no real parent is online, the in-game parent reacts on their own.
+- **Sibling conflict:** tease, grab, pillow-fight or shove. Cartoon fight scenes build tension until a parent walks over, separates you and applies a fair, non-physical consequence. Saying sorry makes up, and the family remembers.
+- **Phone reels and TV:** an endless reels feed and TV time eat the clock. After 30 minutes you get a nudge, after 60 a parent scolds, after 90 the phone is taken or the TV is banned for the day.
+- **Naps and sleep:** context-aware wake-ups, grogginess, and a morning alarm where snoozing has consequences.
+- **Road safety:** varied traffic that brakes, skids, honks and scolds you anywhere on the road, with polite stops at the zebra and a family safety talk after repeat incidents. Vehicles never hit the player.
+- **😡 Angry Mum Mode** (`src/core/angryMum.ts`): ignore a call, start a 3rd fight, or sneak the phone while grounded, and she transforms (red face, steam, fiery aura), yells your full name, counts "1… 2… 2 and a half…", and you choose: apologise, explain, talk back, or **RUN** (house chase and hide-and-seek). Getting caught means an epic time-lapse lecture and grounding, and later she makes up with you. No hitting, ever.
+- **⏪ Rewind time** (`src/core/rewind.ts`): press **T** after a bad choice for a VHS rewind back to that decision (3 per day). The decision log stays honest.
+- **🎬 Cinematic moments** (`src/game/cinematic.ts`, `cinematicDirector.ts`): slow-mo, speed lines, freeze frames and stings on big moments.
+- **🎲 Plot twists** (`src/core/twists.ts`), up to one surprise per day:
+  - Surprise relatives
+  - A power cut with a flashlight
+  - A lost puppy you can adopt
+  - A wallet full of cash, as an honesty test
+  - Your reel going viral, with online kindness and safety
+  - A kite stuck in a tree
+- **Offline voice cache:** every ElevenLabs line a device hears is saved there and replays instantly, even offline, at no cost.
+
+### Demo mode for pitches
+
+Open the live site with **`?demo=1`** (https://ekupekuai.github.io/lifequest/?demo=1) to enable demo shortcuts in the browser console:
+
+```js
+__angry.demo()        // trigger Angry Mum Mode at home
+__twist('wallet')     // or 'puppy', 'powercut', 'viral', 'relatives', 'kite'
+```
+
+These shortcuts are off for normal players. In local development they are always on, plus `__lq` (the game store).
+
 ## Project structure
 
 ```
@@ -135,8 +167,9 @@ Every save writes locally first and then to the cloud. RLS restricts all family 
 See the final section of the delivery notes, or the "Known limitations" list below.
 
 ### Known limitations
-- The Supabase adapter and SQL have not been tested against a live project from this environment (no credentials). They are written to the official docs and type-checked.
-- 14 more mission templates from the design doc (meal prep, laundry, bus trip, and others) are listed as "coming soon". The engine supports them, but they aren't built yet.
-- Bus travel is informational only (timetable); riding the bus isn't implemented yet.
+- Voices, music and sound effects have been checked by measurement in automated tests, not by ear. Play once with sound on before demos.
+- ElevenLabs default voices only work on accounts created before March 2026 and stop working on 31 Dec 2026. Recast them with Voice Library IDs in Settings → Advanced.
+- Rate limits and the daily character cap in the `tts` function are kept in memory per function instance (best effort). The ElevenLabs key's own credit limit is the hard stop.
+- 3D mode on low-end phones and the newest plot twists have only been tested in desktop browsers.
 
 LifeQuest simulates real situations for practice. Doing well in the game doesn't guarantee the same results in real life.

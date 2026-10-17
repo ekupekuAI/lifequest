@@ -352,6 +352,8 @@ export interface GameState {
   rewards?: Reward[];
   /** behaviour & responsibility tracking (screen time, fights, road safety, sleep) — see core/conduct.ts */
   conduct?: ConductState;
+  /** Rewind Time: rewinds used on `day` (3 per day, see core/rewind.ts) and in total */
+  rewinds?: { day: number; used: number; total?: number };
 }
 
 export type ConductKind = 'fight' | 'screen' | 'road' | 'sleep' | 'respect' | 'safety';
@@ -396,4 +398,62 @@ export interface Memory {
   /** effect to apply on a later day, consumed by memory.ts */
   effect?: { type: string; [k: string]: unknown };
   used?: boolean;
+}
+
+// ---------------------------------------------------------------- plot twists (core/twists.ts)
+
+export type TwistId = 'relatives' | 'powercut' | 'puppy' | 'wallet' | 'viral' | 'kite';
+
+export interface TwistActive {
+  id: TwistId;
+  day: number;
+  /** clock minute the twist started */
+  at: number;
+  /** current beat of the mini-story */
+  step: string;
+  data: Record<string, FlagValue>;
+}
+
+export interface PuppyState {
+  status: 'following' | 'adopted' | 'shelter' | 'reunited' | 'shooed';
+  name: string;
+  /** day the puppy joined the family */
+  since: number;
+  fedDay: number;
+  walkedDay: number;
+  /** care days missed in a row */
+  missed: number;
+}
+
+export interface ViralState {
+  phase: 'posted' | 'rising' | 'famous' | 'mean' | 'resolved' | 'faded';
+  day: number;
+  views: number;
+  clip: string;
+  reply?: 'angry' | 'report' | 'parent';
+  /** shared private info (address/school) when asked in the comments */
+  overshared?: boolean;
+}
+
+export interface TwistsState {
+  /** last day the scheduler rolled */
+  day: number;
+  planned: TwistId | null;
+  /** earliest clock minute today's twist may fire */
+  plannedAt: number;
+  /** day a twist last fired (max one per day) */
+  fired: number;
+  active: TwistActive | null;
+  history: { id: TwistId; day: number; outcome: string }[];
+  puppy?: PuppyState;
+  viral?: ViralState;
+  /** the town recognises the player today */
+  fame?: { day: number; kind: 'wallet' | 'viral'; greeted: string[] };
+  /** guilt from a kept wallet the family has not found out about yet */
+  secret?: { day: number; amount: number };
+}
+
+// declaration merge: appends the optional plot-twist slice to the save
+export interface GameState {
+  twists?: TwistsState;
 }

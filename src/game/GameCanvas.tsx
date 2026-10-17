@@ -29,7 +29,7 @@ export default function GameCanvas() {
       scene: [BootScene, HomeScene, TownScene, StoreScene, ClinicScene, CityScene, LibraryScene],
       banner: false,
     });
-    (window as any).__phaser = game.current;
+    if (import.meta.env?.DEV) (window as any).__phaser = game.current;
     setGame(game.current);
     return () => {
       setGame(null);

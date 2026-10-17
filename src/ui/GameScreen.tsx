@@ -45,6 +45,7 @@ import WowOverlays from './WowOverlays';
 import PhoneCall, { isPhoneModal, phoneEscape } from './PhoneCall';
 import { phonePress } from './HUD';
 import PhoneReels, { openPhone } from './PhoneReels';
+import { RewindButton, rewindPress } from './RewindOverlay';
 
 function dismissTutorial() {
   store.state.tutorialSeen = true;
@@ -137,6 +138,9 @@ export default function GameScreen() {
         openPhone();
       } else if (k === 'v' && !u.dialogue && !u.modal) {
         store.toggleView3d();
+      } else if (k === 't' && (!u.modal || u.modal.type === 'journal' || u.modal.type === 'reels')) {
+        // Rewind Time — also works while a challenge is on screen
+        rewindPress();
       }
     };
     window.addEventListener('keydown', onKey);
@@ -181,6 +185,7 @@ export default function GameScreen() {
         <HUD touch={touch} />
         <QueuePanel />
         {touch && <TouchControls />}
+        {touch && <RewindButton touch />}
         {touch && (
           <button className="btn view-toggle-touch" onClick={() => store.toggleView3d()} aria-label={ui.view3d ? 'Switch to 2D view' : 'Switch to 3D view'}>
             {ui.view3d ? '2D' : '3D'}

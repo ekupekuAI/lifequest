@@ -21,6 +21,7 @@ import {
 import { REEL_H, REEL_W, drawReel } from './reelArt';
 import { prefersReducedMotion, useSnap } from './hooks';
 import './conduct.css';
+import { CLIPS, postReel, reelClipReady } from '../core/twists';
 
 /** Open the phone (HUD button / R key). A confiscated phone still opens — to its lock screen. */
 export function openPhone() {
@@ -139,15 +140,7 @@ export default function PhoneReels() {
               {app === 'reels' && <ReelsApp seed={seed} paused={nudge || !!coming} />}
               {app === 'messages' && <MessagesApp onNote={setNote} />}
               {app === 'calc' && <CalcApp />}
-              {app === 'camera' && (
-                <div className="phone-later">
-                  <span className="big" aria-hidden>
-                    📷
-                  </span>
-                  <b>Maybe later</b>
-                  <span>The lens is all smudged. Real life looks better without a filter anyway.</span>
-                </div>
-              )}
+              {app === 'camera' && <CameraApp onDone={close} />}
               {app === 'locked' && <LockedScreen until={lock.until} onOk={close} />}
             </div>
             {note && (
@@ -521,5 +514,46 @@ function ReelCard({ reel, active, near }: { reel: Reel; active: boolean; near: b
         <span className="reel-music">♫ original sound · {reel.handle.slice(1)}</span>
       </div>
     </article>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Camera: post a reel of something funny you filmed today (the viral-reel plot twist).
+
+function CameraApp({ onDone }: { onDone: () => void }) {
+  const { state } = useSnap();
+  const v = state.twists?.viral;
+  const clip = reelClipReady(store);
+  const postedToday = !!v && v.day === state.clock.day;
+  if (postedToday) {
+    return (
+      <div className="phone-later">
+        <span className="big" aria-hidden>
+          {v.phase === 'posted' ? '📤' : '📈'}
+        </span>
+        <b>{v.phase === 'posted' ? 'Your reel is up!' : `${compact(v.views)} views`}</b>
+        <span>{v.phase === 'posted' ? 'Put the phone down and see what happens…' : 'One reel a day is plenty.'}</span>
+      </div>
+    );
+  }
+  return (
+    <div className="phone-later">
+      <span className="big" aria-hidden>
+        🎬
+      </span>
+      <b>{clip ? 'You filmed the pillow fight!' : 'Nothing funny filmed yet'}</b>
+      <span>{clip ? 'Feathers everywhere. It is honestly hilarious.' : 'Tip: a pillow fight with your sibling makes a great clip. Or post a goofy kitchen dance.'}</span>
+      <button
+        className="btn btn-good btn-block"
+        data-autofocus
+        onClick={() => {
+          postReel(store, clip ? 'pillow-fight' : 'dance');
+          onDone();
+        }}
+      >
+        📤 Post the {CLIPS[clip ? 'pillow-fight' : 'dance']} reel
+      </button>
+      <span className="ph-tip">Never show your address, school or uniform in a reel.</span>
+    </div>
   );
 }

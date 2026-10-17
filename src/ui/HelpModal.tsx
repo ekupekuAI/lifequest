@@ -47,6 +47,14 @@ export function ControlsList({ touch = false }: { touch?: boolean }) {
           </dt>
           <dd>Hint: what to do next</dd>
           <dt>
+            <Key>R</Key>
+          </dt>
+          <dd>Phone: reels (watch the screen time!)</dd>
+          <dt>
+            <Key>T</Key>
+          </dt>
+          <dd>Rewind time to your last big choice (3 per day)</dd>
+          <dt>
             <Key>Esc</Key>
           </dt>
           <dd>Close / pause</dd>
