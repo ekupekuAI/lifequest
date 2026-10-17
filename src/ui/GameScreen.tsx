@@ -41,6 +41,7 @@ import HelpModal, { ControlsList } from './HelpModal';
 import ConfirmModal from './ConfirmModal';
 import SettingsModal from './SettingsModal';
 import DaySummaryModal from './DaySummaryModal';
+import WowOverlays from './WowOverlays';
 import PhoneCall, { isPhoneModal, phoneEscape } from './PhoneCall';
 import { phonePress } from './HUD';
 import PhoneReels, { openPhone } from './PhoneReels';
@@ -191,6 +192,7 @@ export default function GameScreen() {
         <RewardCelebration />
         <ModalRouter touch={touch} />
         <PhoneCall />
+        <WowOverlays />
       </div>
     </div>
   );

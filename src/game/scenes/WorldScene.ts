@@ -1,6 +1,7 @@
 // Shared engine for every walkable map: ASCII tilemap + collisions, props,
 // interactables, NPCs, doors, day/night lighting, interaction prompts and FX.
 import Phaser from 'phaser';
+import { attachWow } from '../wow';
 import { store } from '../../core/store';
 import type { GameState, LocationId } from '../../domain/types';
 import { touchInput } from '../input';
@@ -178,6 +179,7 @@ export abstract class WorldScene extends Phaser.Scene {
     this.cameras.main.fadeIn(250, 0, 0, 0);
     this.syncDynamic();
     this.afterCreate();
+    attachWow(this);
   }
 
   protected afterCreate() {}
